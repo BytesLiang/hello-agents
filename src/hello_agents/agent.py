@@ -1,15 +1,21 @@
 """Core agent primitives for the hello_agents package."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+
+from hello_agents.llm.client import LLMClient
 
 
-@dataclass(slots=True)
-class Agent:
-    """Represent a minimal agent instance."""
+class Agent(ABC):
+    """Define the top-level abstract contract for all LLM-backed agents."""
 
-    name: str
+    def __init__(self, name: str, llm: LLMClient) -> None:
+        """Store the common agent identity and shared LLM dependency."""
 
-    def run(self) -> str:
-        """Return a simple status message for the agent."""
+        self.name = name
+        self.llm = llm
 
-        return f"Agent {self.name} is ready."
+    @abstractmethod
+    def run(self, message: str) -> str:
+        """Execute the agent's primary behavior."""

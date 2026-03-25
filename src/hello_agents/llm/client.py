@@ -65,14 +65,14 @@ class LLMClient:
         stream = cast(
             Any,
             self._client.chat.completions.create(
-            model=self._config.model,
+                model=self._config.model,
                 messages=cast(
                     Any,
                     [self._message_to_dict(message) for message in messages],
                 ),
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
             ),
         )
 

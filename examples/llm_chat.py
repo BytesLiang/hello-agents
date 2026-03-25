@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # type: ignore[import-not-found]
 
 from hello_agents.llm import LLMClient, LLMConfig, LLMMessage
 
