@@ -7,6 +7,7 @@ from typing import cast
 from hello_agents.chat_agent import ChatAgent
 from hello_agents.llm.client import LLMClient
 from hello_agents.llm.types import LLMMessage, LLMResponse
+from hello_agents.tools import ToolRegistry
 
 
 class FakeLLMClient:
@@ -28,15 +29,18 @@ def test_chat_agent_sends_system_and_user_messages() -> None:
     """Verify the chat agent only delegates a single turn to the LLM."""
 
     llm = FakeLLMClient()
+    tools = ToolRegistry()
     agent = ChatAgent(
         name="chat-demo",
         llm=cast(LLMClient, llm),
+        tools=tools,
         system_prompt="You are concise.",
     )
 
     result = agent.run("Say hello.")
 
     assert result == "hello from llm"
+    assert agent.tools is tools
     assert llm.messages == [
         LLMMessage(role="system", content="You are concise."),
         LLMMessage(role="user", content="Say hello."),
