@@ -20,11 +20,20 @@ official `openai` Python SDK. It supports:
 - OpenAI-hosted models
 - OpenAI-compatible local services such as Ollama, vLLM, and LM Studio
 
+The example script loads a local `.env` file with `python-dotenv`. The core
+library still reads from `os.environ` only.
+
 ### Environment Variables
 
 ```bash
 export LLM_MODEL="gpt-4o-mini"
 export OPENAI_API_KEY="your-api-key"
+```
+
+You can also create a local `.env` file:
+
+```bash
+cp .env.example .env
 ```
 
 For a local OpenAI-compatible endpoint:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 
+from dotenv import load_dotenv
+
 from hello_agents.llm import LLMClient, LLMConfig, LLMMessage
 
 
@@ -32,6 +34,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """Run the example client interaction."""
 
+    load_dotenv()
     args = parse_args()
     client = LLMClient(LLMConfig.from_env())
     messages = [

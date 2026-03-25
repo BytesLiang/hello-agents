@@ -17,6 +17,7 @@ OpenAI SDK for both hosted and OpenAI-compatible local model endpoints.
 
 Use [`LLMConfig`](/Users/liang/code/hello-agents/src/hello_agents/llm/config.py)
 to configure the client directly, or load it from environment variables.
+The library itself does not auto-read `.env`; the example script does.
 
 ### Environment Variables
 
@@ -29,6 +30,21 @@ to configure the client directly, or load it from environment variables.
 
 If no API key is provided, the client passes `EMPTY` to the SDK. This is useful
 for local OpenAI-compatible services that ignore API keys.
+
+## .env Support
+
+For local development, the example script calls `load_dotenv()` before reading
+configuration, so values from a project `.env` file become visible through
+`os.environ`.
+
+Example `.env`:
+
+```bash
+LLM_MODEL=qwen2.5:14b
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_PROVIDER=ollama
+LLM_API_KEY=EMPTY
+```
 
 ## Direct Usage
 
