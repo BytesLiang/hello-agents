@@ -144,3 +144,30 @@ The example script:
 - registers `TavilySearchTool` in a `ToolRegistry`
 - builds `ChatAgent(use_tools=True)`
 - lets the model decide when to call the search tool
+
+## ReActAgent Example
+
+To run the `ReActAgent + TavilySearchTool` example, use the same `.env`
+configuration:
+
+```bash
+LLM_MODEL=gpt-4o-mini
+OPENAI_API_KEY=your-openai-api-key
+TAVILY_API_KEY=your-tavily-api-key
+```
+
+Then run:
+
+```bash
+python examples/react_agent_with_tavily.py \
+  --prompt "Search the latest Python agent frameworks and summarize them."
+```
+
+The ReAct example script:
+
+- loads `.env`
+- creates `LLMClient` from `LLMConfig.from_env()`
+- registers `TavilySearchTool` in a `ToolRegistry`
+- builds `ReActAgent(use_tools=True)`
+- lets the model produce `thought/action/action_input/final_answer` JSON
+- executes tool observations inside the ReAct loop

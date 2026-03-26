@@ -84,6 +84,26 @@ python examples/chat_agent_with_tavily.py \
   --prompt "Search the latest Python agent frameworks and summarize them."
 ```
 
+## ReActAgent With Tavily
+
+There is also a complete `ReActAgent + TavilySearchTool` example for explicit
+reasoning-and-acting loops.
+
+Use the same `.env` file:
+
+```bash
+LLM_MODEL=gpt-4o-mini
+OPENAI_API_KEY=your-openai-api-key
+TAVILY_API_KEY=your-tavily-api-key
+```
+
+Run the example:
+
+```bash
+python examples/react_agent_with_tavily.py \
+  --prompt "Search the latest Python agent frameworks and summarize them."
+```
+
 ## Project Structure
 
 ```text
