@@ -30,17 +30,38 @@ class ChatAgent(Agent):
     def run(self, message: str) -> str:
         """Run a chat turn and execute tool calls when the model requests them."""
 
+        self.logger.info(
+            "Starting chat run use_tools=%s message_length=%s",
+            self.use_tools,
+            len(message),
+        )
         messages = [
             LLMMessage(role="system", content=self.system_prompt),
             LLMMessage(role="user", content=message),
         ]
 
-        for _ in range(self.max_tool_rounds + 1):
+        for round_index in range(self.max_tool_rounds + 1):
+            self.logger.info(
+                "Sending LLM request round=%s tool_count=%s",
+                round_index,
+                len(self.describe_tools()),
+            )
             response = self.llm.chat(
                 messages,
                 tools=self.describe_tools(),
             )
+            self.logger.info(
+                "Received LLM response round=%s finish_reason=%s tool_calls=%s",
+                round_index,
+                response.finish_reason,
+                len(response.tool_calls),
+            )
             if not self.use_tools or not response.tool_calls:
+                self.logger.info(
+                    "Completing chat run round=%s response_length=%s",
+                    round_index,
+                    len(response.content),
+                )
                 return response.content
 
             messages.append(
@@ -51,7 +72,19 @@ class ChatAgent(Agent):
                 )
             )
             for tool_call in response.tool_calls:
+                self.logger.info(
+                    "Handling tool call id=%s name=%s",
+                    tool_call.id,
+                    tool_call.name,
+                )
                 tool_result = self.execute_tool(tool_call.name, tool_call.arguments)
+                self.logger.info(
+                    "Tool call completed id=%s name=%s success=%s content_length=%s",
+                    tool_call.id,
+                    tool_call.name,
+                    tool_result.success,
+                    len(tool_result.content),
+                )
                 messages.append(
                     LLMMessage(
                         role="tool",
@@ -60,4 +93,8 @@ class ChatAgent(Agent):
                     )
                 )
 
+        self.logger.warning(
+            "Tool calling exceeded max rounds=%s",
+            self.max_tool_rounds,
+        )
         raise RuntimeError("Tool calling exceeded the maximum number of rounds.")

@@ -59,6 +59,31 @@ See [`docs/llm.md`](/Users/liang/code/hello-agents/docs/llm.md) and
 [`examples/llm_chat.py`](/Users/liang/code/hello-agents/examples/llm_chat.py)
 for complete usage examples.
 
+## ChatAgent With Tavily
+
+The project also includes a complete `ChatAgent + TavilySearchTool` example.
+
+Required environment variables:
+
+```bash
+cp .env.example .env
+```
+
+Then set at least:
+
+```bash
+LLM_MODEL=gpt-4o-mini
+OPENAI_API_KEY=your-openai-api-key
+TAVILY_API_KEY=your-tavily-api-key
+```
+
+Run the example:
+
+```bash
+python examples/chat_agent_with_tavily.py \
+  --prompt "Search the latest Python agent frameworks and summarize them."
+```
+
 ## Project Structure
 
 ```text

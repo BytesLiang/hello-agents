@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import cast
+
+import pytest
 
 from hello_agents.chat_agent import ChatAgent
 from hello_agents.llm.client import LLMClient
@@ -223,7 +226,45 @@ def test_chat_agent_limits_tool_rounds() -> None:
         max_tool_rounds=1,
     )
 
-    import pytest
-
     with pytest.raises(RuntimeError, match="maximum number of rounds"):
         agent.run("Loop.")
+
+
+def test_chat_agent_emits_logs_for_tool_execution(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify key runtime events are logged during tool execution."""
+
+    caplog.set_level(logging.INFO)
+    llm = FakeLLMClient()
+    llm.responses = [
+        LLMResponse(
+            model="fake-model",
+            content="",
+            tool_calls=(
+                LLMToolCall(
+                    id="call_1",
+                    name="echo",
+                    arguments={"text": "tool output"},
+                ),
+            ),
+        ),
+        LLMResponse(model="fake-model", content="final answer"),
+    ]
+    tools = ToolRegistry()
+    tools.register(EchoTool())
+    agent = ChatAgent(
+        name="chat-demo",
+        llm=cast(LLMClient, llm),
+        tools=tools,
+        use_tools=True,
+    )
+
+    agent.run("Use the tool.")
+
+    log_text = caplog.text
+    assert "Starting chat run" in log_text
+    assert "Sending LLM request" in log_text
+    assert "Handling tool call id=call_1 name=echo" in log_text
+    assert "Tool call completed id=call_1 name=echo" in log_text
+    assert "Completing chat run" in log_text

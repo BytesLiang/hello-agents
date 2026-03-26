@@ -112,3 +112,35 @@ Run the packaged example:
 ```bash
 python examples/llm_chat.py --prompt "Say hello"
 ```
+
+## ChatAgent Tool-Calling Example
+
+To run the complete `ChatAgent + TavilySearchTool` example, create a `.env`
+file and provide both your model key and Tavily key:
+
+```bash
+cp .env.example .env
+```
+
+Example `.env` for hosted OpenAI:
+
+```bash
+LLM_MODEL=gpt-4o-mini
+OPENAI_API_KEY=your-openai-api-key
+TAVILY_API_KEY=your-tavily-api-key
+```
+
+Then run:
+
+```bash
+python examples/chat_agent_with_tavily.py \
+  --prompt "Search the latest Python agent frameworks and summarize them."
+```
+
+The example script:
+
+- loads `.env`
+- creates `LLMClient` from `LLMConfig.from_env()`
+- registers `TavilySearchTool` in a `ToolRegistry`
+- builds `ChatAgent(use_tools=True)`
+- lets the model decide when to call the search tool

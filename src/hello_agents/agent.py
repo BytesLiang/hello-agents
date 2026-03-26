@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 
 from hello_agents.llm.client import LLMClient
@@ -25,6 +26,7 @@ class Agent(ABC):
         self.llm = llm
         self.tools = tools or ToolRegistry()
         self.use_tools = use_tools
+        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.name}")
 
     def describe_tools(self) -> list[dict[str, object]]:
         """Return the tools available to the agent."""
@@ -38,6 +40,11 @@ class Agent(ABC):
 
         if not self.use_tools:
             raise RuntimeError("Tools are disabled for this agent.")
+        self.logger.info(
+            "Executing tool '%s' with payload keys=%s",
+            name,
+            sorted(payload),
+        )
         return self.tools.execute(name, payload)
 
     @abstractmethod
