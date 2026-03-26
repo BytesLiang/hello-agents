@@ -16,12 +16,13 @@ class ChatAgent(Agent):
         name: str,
         llm: LLMClient,
         tools: ToolRegistry | None = None,
+        use_tools: bool = False,
         *,
         system_prompt: str = "You are a helpful assistant.",
     ) -> None:
         """Store the system prompt required for a simple single-turn run."""
 
-        super().__init__(name=name, llm=llm, tools=tools)
+        super().__init__(name=name, llm=llm, tools=tools, use_tools=use_tools)
         self.system_prompt = system_prompt
 
     def run(self, message: str) -> str:
@@ -31,6 +32,7 @@ class ChatAgent(Agent):
             [
                 LLMMessage(role="system", content=self.system_prompt),
                 LLMMessage(role="user", content=message),
-            ]
+            ],
+            tools=self.describe_tools(),
         )
         return response.content

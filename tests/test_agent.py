@@ -6,7 +6,13 @@ import pytest
 
 from hello_agents.agent import Agent
 from hello_agents.llm.client import LLMClient
-from hello_agents.tools import Tool, ToolParameter, ToolRegistry, ToolResult, ToolSchema
+from hello_agents.tools import (
+    Tool,
+    ToolParameter,
+    ToolRegistry,
+    ToolResult,
+    ToolSchema,
+)
 
 
 class FakeLLMClient:
@@ -46,10 +52,11 @@ class DemoAgent(Agent):
         name: str,
         llm: LLMClient,
         tools: ToolRegistry | None = None,
+        use_tools: bool = False,
     ) -> None:
         """Initialize the concrete agent with the shared dependencies."""
 
-        super().__init__(name=name, llm=llm, tools=tools)
+        super().__init__(name=name, llm=llm, tools=tools, use_tools=use_tools)
 
     def run(self, message: str) -> str:
         """Return a predictable status message."""
@@ -73,14 +80,28 @@ def test_concrete_agent_implements_shared_interface() -> None:
     llm = cast(LLMClient, FakeLLMClient())
     tools = ToolRegistry()
     tools.register(EchoTool())
-    agent = DemoAgent(name="demo", llm=llm, tools=tools)
+    agent = DemoAgent(name="demo", llm=llm, tools=tools, use_tools=True)
 
     assert agent.name == "demo"
     assert agent.llm is llm
     assert agent.tools is tools
+    assert agent.use_tools is True
     assert agent.describe_tools() == [tools.get("echo").to_openai_tool()]
     assert agent.execute_tool("echo", {"text": "tool-call"}) == ToolResult(
         tool_name="echo",
         content="tool-call",
     )
     assert agent.run("hello") == "Agent demo received: hello"
+
+
+def test_agent_can_disable_tools() -> None:
+    """Verify agents can carry tools without exposing them."""
+
+    llm = cast(LLMClient, FakeLLMClient())
+    tools = ToolRegistry()
+    tools.register(EchoTool())
+    agent = DemoAgent(name="demo", llm=llm, tools=tools, use_tools=False)
+
+    assert agent.describe_tools() == []
+    with pytest.raises(RuntimeError, match="disabled"):
+        agent.execute_tool("echo", {"text": "tool-call"})

@@ -17,21 +17,27 @@ class Agent(ABC):
         name: str,
         llm: LLMClient,
         tools: ToolRegistry | None = None,
+        use_tools: bool = False,
     ) -> None:
         """Store the common agent identity, LLM dependency, and tools."""
 
         self.name = name
         self.llm = llm
         self.tools = tools or ToolRegistry()
+        self.use_tools = use_tools
 
     def describe_tools(self) -> list[dict[str, object]]:
         """Return the tools available to the agent."""
 
+        if not self.use_tools:
+            return []
         return self.tools.describe_tools()
 
     def execute_tool(self, name: str, payload: dict[str, object]) -> ToolResult:
         """Execute one of the agent's registered tools."""
 
+        if not self.use_tools:
+            raise RuntimeError("Tools are disabled for this agent.")
         return self.tools.execute(name, payload)
 
     @abstractmethod

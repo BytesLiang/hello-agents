@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from hello_agents.tools import Tool, ToolParameter, ToolRegistry, ToolResult, ToolSchema
+from hello_agents.tools import (
+    TavilySearchTool,
+    Tool,
+    ToolParameter,
+    ToolRegistry,
+    ToolResult,
+    ToolSchema,
+)
 
 
 class EchoTool(Tool):
@@ -193,6 +200,82 @@ def test_tool_exports_openai_function_definition() -> None:
                 },
                 "additionalProperties": False,
                 "required": ["text"],
+            },
+        },
+    }
+
+
+def test_tavily_tool_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify Tavily search fails clearly when no API key is configured."""
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    tool = TavilySearchTool()
+
+    with pytest.raises(ValueError, match="TAVILY_API_KEY"):
+        tool.execute({"query": "hello"})
+
+
+def test_tavily_tool_formats_search_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify Tavily search results normalize into a ToolResult."""
+
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+
+    class FakeTavilyClient:
+        def search(self, *, query: str, max_results: object) -> dict[str, object]:
+            assert query == "python agent framework"
+            assert max_results == 2
+            return {
+                "answer": "A framework helps orchestrate LLMs and tools.",
+                "results": [
+                    {
+                        "title": "Example Result",
+                        "url": "https://example.com/result",
+                        "content": "Framework overview",
+                    }
+                ],
+            }
+
+    tool = TavilySearchTool(client=FakeTavilyClient())
+    result = tool.execute(
+        {
+            "query": "python agent framework",
+            "max_results": 2,
+        }
+    )
+
+    assert result.tool_name == "tavily_search"
+    assert "Search query: python agent framework" in result.content
+    assert "Answer: A framework helps orchestrate LLMs and tools." in result.content
+    assert "1. Example Result" in result.content
+    assert result.metadata["query"] == "python agent framework"
+
+
+def test_tavily_tool_exports_openai_definition() -> None:
+    """Verify Tavily search tool exports an OpenAI-compatible schema."""
+
+    tool = TavilySearchTool()
+
+    assert tool.to_openai_tool() == {
+        "type": "function",
+        "function": {
+            "name": "tavily_search",
+            "description": "Search the web with Tavily and return summarized results.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query text.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of search results to return.",
+                    },
+                },
+                "additionalProperties": False,
+                "required": ["query"],
             },
         },
     }

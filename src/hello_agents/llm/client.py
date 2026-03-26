@@ -27,17 +27,24 @@ class LLMClient:
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        tools: Sequence[dict[str, object]] | None = None,
     ) -> LLMResponse:
         """Create a non-streaming chat completion."""
 
-        response = self._client.chat.completions.create(
-            model=self._config.model,
-            messages=cast(
+        request_kwargs: dict[str, Any] = {
+            "model": self._config.model,
+            "messages": cast(
                 Any,
                 [self._message_to_dict(message) for message in messages],
             ),
-            temperature=temperature,
-            max_tokens=max_tokens,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if tools is not None:
+            request_kwargs["tools"] = cast(Any, list(tools))
+
+        response = self._client.chat.completions.create(
+            **request_kwargs,
         )
 
         choice = response.choices[0]

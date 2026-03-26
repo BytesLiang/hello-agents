@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from hello_agents.tools.base import Tool, ToolResult
+from hello_agents.tools.tavily import TavilySearchTool
 
 
 class ToolRegistry:
@@ -44,3 +45,11 @@ class ToolRegistry:
         tool = self.get(name)
         tool.schema.validate(payload)
         return tool.execute(payload)
+
+
+def build_default_tool_registry() -> ToolRegistry:
+    """Build the default registry used by agents in simple setups."""
+
+    registry = ToolRegistry()
+    registry.register(TavilySearchTool())
+    return registry

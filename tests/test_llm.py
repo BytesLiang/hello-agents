@@ -75,7 +75,20 @@ def test_llm_client_chat_uses_openai_sdk_shape() -> None:
         client=fake_client,
     )
 
-    response = llm.chat([LLMMessage(role="user", content="ping")], max_tokens=64)
+    response = llm.chat(
+        [LLMMessage(role="user", content="ping")],
+        max_tokens=64,
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "echo",
+                    "description": "Echo input.",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+    )
 
     assert response.content == "hello"
     assert response.model == "qwen-local"
@@ -84,6 +97,16 @@ def test_llm_client_chat_uses_openai_sdk_shape() -> None:
     assert call["model"] == "qwen-local"
     assert call["max_tokens"] == 64
     assert call["messages"] == [{"role": "user", "content": "ping"}]
+    assert call["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "echo",
+                "description": "Echo input.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
 
 
 def test_llm_client_stream_returns_text_deltas() -> None:
