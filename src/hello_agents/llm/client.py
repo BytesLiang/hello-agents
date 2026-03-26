@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+import json
+from collections.abc import Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 from hello_agents.llm.config import LLMConfig
-from hello_agents.llm.types import LLMMessage, LLMResponse
+from hello_agents.llm.types import LLMMessage, LLMResponse, LLMToolCall
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -50,6 +51,7 @@ class LLMClient:
         choice = response.choices[0]
         content = choice.message.content or ""
         usage = response.usage
+        tool_calls = _normalize_tool_calls(getattr(choice.message, "tool_calls", None))
 
         return LLMResponse(
             model=response.model,
@@ -58,6 +60,7 @@ class LLMClient:
             prompt_tokens=0 if usage is None else usage.prompt_tokens,
             completion_tokens=0 if usage is None else usage.completion_tokens,
             total_tokens=0 if usage is None else usage.total_tokens,
+            tool_calls=tool_calls,
         )
 
     def stream(
@@ -103,7 +106,58 @@ class LLMClient:
         )
 
     @staticmethod
-    def _message_to_dict(message: LLMMessage) -> dict[str, str]:
+    def _message_to_dict(message: LLMMessage) -> dict[str, object]:
         """Convert a message dataclass to the OpenAI SDK payload shape."""
 
-        return {"role": message.role, "content": message.content}
+        payload: dict[str, object] = {
+            "role": message.role,
+            "content": message.content,
+        }
+        if message.tool_call_id is not None:
+            payload["tool_call_id"] = message.tool_call_id
+        if message.tool_calls:
+            payload["tool_calls"] = [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.name,
+                        "arguments": json.dumps(tool_call.arguments),
+                    },
+                }
+                for tool_call in message.tool_calls
+            ]
+        return payload
+
+
+def _normalize_tool_calls(raw_tool_calls: object) -> tuple[LLMToolCall, ...]:
+    """Normalize OpenAI SDK tool calls into framework-level tool calls."""
+
+    if raw_tool_calls is None or not isinstance(raw_tool_calls, Iterable):
+        return ()
+
+    normalized_calls: list[LLMToolCall] = []
+    for raw_tool_call in raw_tool_calls:
+        tool_call_id = getattr(raw_tool_call, "id", None)
+        function = getattr(raw_tool_call, "function", None)
+        name = getattr(function, "name", None)
+        arguments = getattr(function, "arguments", None)
+
+        if not isinstance(tool_call_id, str) or not isinstance(name, str):
+            continue
+
+        parsed_arguments: dict[str, object] = {}
+        if isinstance(arguments, str) and arguments:
+            parsed = json.loads(arguments)
+            if isinstance(parsed, dict):
+                parsed_arguments = parsed
+
+        normalized_calls.append(
+            LLMToolCall(
+                id=tool_call_id,
+                name=name,
+                arguments=parsed_arguments,
+            )
+        )
+
+    return tuple(normalized_calls)
