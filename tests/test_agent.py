@@ -6,6 +6,8 @@ import pytest
 
 from hello_agents.agent import Agent
 from hello_agents.llm.client import LLMClient
+from hello_agents.memory import MemoryScope
+from hello_agents.memory.base import Memory
 from hello_agents.tools import (
     Tool,
     ToolParameter,
@@ -53,14 +55,27 @@ class DemoAgent(Agent):
         llm: LLMClient,
         tools: ToolRegistry | None = None,
         use_tools: bool = False,
+        memory: Memory | None = None,
     ) -> None:
         """Initialize the concrete agent with the shared dependencies."""
 
-        super().__init__(name=name, llm=llm, tools=tools, use_tools=use_tools)
+        super().__init__(
+            name=name,
+            llm=llm,
+            tools=tools,
+            use_tools=use_tools,
+            memory=memory,
+        )
 
-    def run(self, message: str) -> str:
+    def run(
+        self,
+        message: str,
+        *,
+        memory_scope: MemoryScope | None = None,
+    ) -> str:
         """Return a predictable status message."""
 
+        del memory_scope
         return f"Agent {self.name} received: {message}"
 
 

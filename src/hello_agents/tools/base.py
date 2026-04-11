@@ -45,9 +45,7 @@ class ToolSchema:
 
         for parameter in self.parameters:
             if parameter.required and parameter.name not in payload:
-                raise ValueError(
-                    f"Missing required parameter '{parameter.name}'."
-                )
+                raise ValueError(f"Missing required parameter '{parameter.name}'.")
 
             if parameter.name in payload and not _matches_type(
                 payload[parameter.name],
@@ -67,8 +65,7 @@ class ToolSchema:
         """Convert the tool schema into an OpenAI-compatible JSON Schema."""
 
         properties = {
-            parameter.name: parameter.to_json_schema()
-            for parameter in self.parameters
+            parameter.name: parameter.to_json_schema() for parameter in self.parameters
         }
         required = [
             parameter.name for parameter in self.parameters if parameter.required
@@ -137,9 +134,9 @@ def _matches_type(value: object, value_type: ToolValueType) -> bool:
     if value_type == "integer":
         return isinstance(value, int) and not isinstance(value, bool)
     if value_type == "number":
-        return (
-            isinstance(value, int) or isinstance(value, float)
-        ) and not isinstance(value, bool)
+        return (isinstance(value, int) or isinstance(value, float)) and not isinstance(
+            value, bool
+        )
     if value_type == "boolean":
         return isinstance(value, bool)
     return False

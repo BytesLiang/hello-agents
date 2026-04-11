@@ -128,14 +128,8 @@ def test_react_agent_limits_steps() -> None:
 
     llm = FakeLLMClient(
         responses=[
-            (
-                '{"thought":"keep going","action":"echo",'
-                '"action_input":{"text":"one"}}'
-            ),
-            (
-                '{"thought":"still going","action":"echo",'
-                '"action_input":{"text":"two"}}'
-            ),
+            ('{"thought":"keep going","action":"echo","action_input":{"text":"one"}}'),
+            ('{"thought":"still going","action":"echo","action_input":{"text":"two"}}'),
         ]
     )
     tools = ToolRegistry()

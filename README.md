@@ -84,6 +84,25 @@ python examples/chat_agent_with_tavily.py \
   --prompt "Search the latest Python agent frameworks and summarize them."
 ```
 
+## ChatAgent With Memory
+
+The project also includes a `ChatAgent + LayeredMemory` example that uses the
+command-style memory protocol, keeps working memory in-process, and persists
+long-term memory in SQLite.
+
+Use the same `.env` file, then run:
+
+```bash
+python examples/chat_agent_with_memory.py
+```
+
+Inside the REPL, try:
+
+```text
+I prefer concise answers. remember that my project is atlas.
+Summarize my project status in one sentence.
+```
+
 ## ReActAgent With Tavily
 
 There is also a complete `ReActAgent + TavilySearchTool` example for explicit

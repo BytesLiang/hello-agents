@@ -6,6 +6,8 @@ import logging
 from abc import ABC, abstractmethod
 
 from hello_agents.llm.client import LLMClient
+from hello_agents.memory import MemoryQueryResult, MemoryScope
+from hello_agents.memory.base import Memory
 from hello_agents.tools.base import ToolResult
 from hello_agents.tools.registry import ToolRegistry
 
@@ -19,6 +21,7 @@ class Agent(ABC):
         llm: LLMClient,
         tools: ToolRegistry | None = None,
         use_tools: bool = False,
+        memory: Memory | None = None,
     ) -> None:
         """Store the common agent identity, LLM dependency, and tools."""
 
@@ -26,6 +29,7 @@ class Agent(ABC):
         self.llm = llm
         self.tools = tools or ToolRegistry()
         self.use_tools = use_tools
+        self.memory = memory
         self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.name}")
 
     def describe_tools(self) -> list[dict[str, object]]:
@@ -47,6 +51,108 @@ class Agent(ABC):
         )
         return self.tools.execute(name, payload)
 
+    def build_effective_message(
+        self,
+        message: str,
+        *,
+        memory_scope: MemoryScope | None = None,
+    ) -> str:
+        """Inject queried memory context into the user message when enabled."""
+
+        if self.memory is None or memory_scope is None:
+            return message
+        query_result = self.memory.query(message, scope=memory_scope)
+        block = self._render_memory_query_result(query_result)
+        if not block:
+            return message
+        return f"{block}\n\nUser request:\n{message}"
+
+    def persist_memory_turn(
+        self,
+        *,
+        memory_scope: MemoryScope | None,
+        message: str,
+        response: str,
+        tool_results: tuple[ToolResult, ...] = (),
+        success: bool = True,
+    ) -> None:
+        """Propose and commit memory for a completed turn."""
+
+        if self.memory is None or memory_scope is None:
+            return
+        try:
+            proposal = self.memory.propose(
+                message,
+                response,
+                scope=memory_scope,
+                tool_results=tool_results,
+                success=success,
+            )
+            self.memory.commit(proposal, scope=memory_scope)
+        except Exception:
+            self.logger.exception("Failed to persist memory for agent=%s", self.name)
+
+    @staticmethod
+    def _render_memory_query_result(query_result: MemoryQueryResult) -> str:
+        """Render queried memory into a prompt block."""
+
+        sections: list[str] = []
+        plan_entries = [
+            record.content
+            for record in query_result.working
+            if record.kind.value == "working_plan"
+        ]
+        if plan_entries:
+            sections.append(
+                "Current plan:\n" + "\n".join(f"- {plan}" for plan in plan_entries[-2:])
+            )
+
+        context_entries = [
+            record.content
+            for record in query_result.working
+            if record.kind.value == "working_context"
+        ]
+        if context_entries:
+            sections.append(
+                "Session context:\n"
+                + "\n".join(f"- {item}" for item in context_entries[-4:])
+            )
+
+        if query_result.preferences:
+            sections.append(
+                "User preferences:\n"
+                + "\n".join(
+                    f"- {record.summary}" for record in query_result.preferences
+                )
+            )
+
+        if query_result.facts:
+            sections.append(
+                "Confirmed facts:\n"
+                + "\n".join(f"- {record.summary}" for record in query_result.facts)
+            )
+
+        if query_result.episodes:
+            sections.append(
+                "Relevant task history:\n"
+                + "\n".join(f"- {record.summary}" for record in query_result.episodes)
+            )
+
+        if query_result.procedures:
+            sections.append(
+                "Successful experience:\n"
+                + "\n".join(f"- {record.content}" for record in query_result.procedures)
+            )
+
+        if not sections:
+            return ""
+        return "[MEMORY]\n" + "\n\n".join(sections) + "\n[/MEMORY]"
+
     @abstractmethod
-    def run(self, message: str) -> str:
+    def run(
+        self,
+        message: str,
+        *,
+        memory_scope: MemoryScope | None = None,
+    ) -> str:
         """Execute the agent's primary behavior."""

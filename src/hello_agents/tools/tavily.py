@@ -65,14 +65,13 @@ class TavilySearchTool(Tool):
 
         api_key = os.getenv(self.api_key_env)
         if not api_key:
-            raise ValueError(
-                f"Environment variable '{self.api_key_env}' is required."
-            )
+            raise ValueError(f"Environment variable '{self.api_key_env}' is required.")
 
         from tavily import TavilyClient  # type: ignore[import-not-found]
 
         self._client = TavilyClient(api_key=api_key)
         return self._client
+
 
 def _normalize_tavily_response(
     tool_name: str,

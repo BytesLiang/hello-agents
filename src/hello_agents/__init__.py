@@ -1,6 +1,15 @@
 """Top-level package for the hello_agents project."""
 
 from hello_agents.chat_agent import ChatAgent
+from hello_agents.memory import (
+    EmbedConfig,
+    LayeredMemory,
+    Memory,
+    MemoryConfig,
+    MemoryKind,
+    MemoryRecord,
+    MemoryScope,
+)
 from hello_agents.react_agent import ReActAgent
 from hello_agents.tools import (
     TavilySearchTool,
@@ -14,6 +23,13 @@ from hello_agents.tools import (
 
 __all__ = [
     "ChatAgent",
+    "EmbedConfig",
+    "LayeredMemory",
+    "Memory",
+    "MemoryConfig",
+    "MemoryKind",
+    "MemoryRecord",
+    "MemoryScope",
     "ReActAgent",
     "TavilySearchTool",
     "Tool",

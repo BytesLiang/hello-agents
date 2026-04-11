@@ -9,6 +9,9 @@ from json import JSONDecodeError
 from hello_agents.agent import Agent
 from hello_agents.llm.client import LLMClient
 from hello_agents.llm.types import LLMMessage
+from hello_agents.memory import MemoryScope
+from hello_agents.memory.base import Memory
+from hello_agents.tools.base import ToolResult
 from hello_agents.tools.registry import ToolRegistry
 
 REACT_OUTPUT_CONTRACT = """
@@ -66,89 +69,135 @@ class ReActAgent(Agent):
         llm: LLMClient,
         tools: ToolRegistry | None = None,
         use_tools: bool = True,
+        memory: Memory | None = None,
         *,
         system_prompt: str | None = None,
         max_steps: int = 5,
     ) -> None:
         """Store prompt and loop limits for the ReAct workflow."""
 
-        super().__init__(name=name, llm=llm, tools=tools, use_tools=use_tools)
+        super().__init__(
+            name=name,
+            llm=llm,
+            tools=tools,
+            use_tools=use_tools,
+            memory=memory,
+        )
         self.system_prompt = _build_react_system_prompt(system_prompt)
         self.max_steps = max_steps
 
-    def run(self, message: str) -> str:
+    def run(
+        self,
+        message: str,
+        *,
+        memory_scope: MemoryScope | None = None,
+    ) -> str:
         """Run the ReAct reasoning loop until a final answer is produced."""
 
+        effective_message = self.build_effective_message(
+            message,
+            memory_scope=memory_scope,
+        )
         self.logger.info(
-            "Starting ReAct run use_tools=%s message_length=%s",
+            "Starting ReAct run use_tools=%s message_length=%s memory_enabled=%s",
             self.use_tools,
             len(message),
+            self.memory is not None and memory_scope is not None,
         )
         scratchpad: list[str] = []
+        tool_results: list[ToolResult] = []
 
-        for step_index in range(1, self.max_steps + 1):
-            prompt = self._build_prompt(message=message, scratchpad=scratchpad)
-            self.logger.info("Sending ReAct step=%s", step_index)
-            response = self.llm.chat(
-                [
-                    LLMMessage(role="system", content=self.system_prompt),
-                    LLMMessage(role="user", content=prompt),
-                ]
-            )
-            self.logger.info(
-                "Received ReAct response step=%s response_length=%s",
-                step_index,
-                len(response.content),
-            )
-            self.logger.debug(
-                "Raw ReAct response step=%s content=%r",
-                step_index,
-                response.content,
-            )
-
-            parsed_step = _parse_react_step(response.content)
-            self.logger.info(
-                "Parsed ReAct step=%s action=%s has_final=%s",
-                step_index,
-                parsed_step.action,
-                parsed_step.final_answer is not None,
-            )
-
-            scratchpad.append(f"Thought: {parsed_step.thought}")
-
-            if parsed_step.final_answer is not None:
+        try:
+            for step_index in range(1, self.max_steps + 1):
+                prompt = self._build_prompt(
+                    message=effective_message,
+                    scratchpad=scratchpad,
+                )
+                self.logger.info("Sending ReAct step=%s", step_index)
+                response = self.llm.chat(
+                    [
+                        LLMMessage(role="system", content=self.system_prompt),
+                        LLMMessage(role="user", content=prompt),
+                    ]
+                )
                 self.logger.info(
-                    "Completing ReAct run step=%s response_length=%s",
+                    "Received ReAct response step=%s response_length=%s",
                     step_index,
-                    len(parsed_step.final_answer),
+                    len(response.content),
                 )
-                return parsed_step.final_answer
-
-            if parsed_step.action is None or parsed_step.action_input is None:
-                raise ValueError(
-                    "ReAct response must include either action or final_answer."
+                self.logger.debug(
+                    "Raw ReAct response step=%s content=%r",
+                    step_index,
+                    response.content,
                 )
 
-            if not self.use_tools:
-                raise RuntimeError("Tools are disabled for this agent.")
+                parsed_step = _parse_react_step(response.content)
+                self.logger.info(
+                    "Parsed ReAct step=%s action=%s has_final=%s",
+                    step_index,
+                    parsed_step.action,
+                    parsed_step.final_answer is not None,
+                )
 
-            self.logger.info(
-                "Executing ReAct action step=%s action=%s",
-                step_index,
-                parsed_step.action,
+                scratchpad.append(f"Thought: {parsed_step.thought}")
+
+                if parsed_step.final_answer is not None:
+                    self.logger.info(
+                        "Completing ReAct run step=%s response_length=%s",
+                        step_index,
+                        len(parsed_step.final_answer),
+                    )
+                    self.persist_memory_turn(
+                        memory_scope=memory_scope,
+                        message=message,
+                        response=parsed_step.final_answer,
+                        tool_results=tuple(tool_results),
+                        success=True,
+                    )
+                    return parsed_step.final_answer
+
+                if parsed_step.action is None or parsed_step.action_input is None:
+                    raise ValueError(
+                        "ReAct response must include either action or final_answer."
+                    )
+
+                if not self.use_tools:
+                    raise RuntimeError("Tools are disabled for this agent.")
+
+                self.logger.info(
+                    "Executing ReAct action step=%s action=%s",
+                    step_index,
+                    parsed_step.action,
+                )
+                tool_result = self.execute_tool(
+                    parsed_step.action,
+                    parsed_step.action_input,
+                )
+                tool_results.append(tool_result)
+                scratchpad.append(f"Action: {parsed_step.action}")
+                scratchpad.append(
+                    "Action Input: "
+                    f"{json.dumps(parsed_step.action_input, ensure_ascii=False)}"
+                )
+                scratchpad.append(f"Observation: {tool_result.content}")
+        except Exception as exc:
+            self.persist_memory_turn(
+                memory_scope=memory_scope,
+                message=message,
+                response=str(exc),
+                tool_results=tuple(tool_results),
+                success=False,
             )
-            tool_result = self.execute_tool(
-                parsed_step.action,
-                parsed_step.action_input,
-            )
-            scratchpad.append(f"Action: {parsed_step.action}")
-            scratchpad.append(
-                "Action Input: "
-                f"{json.dumps(parsed_step.action_input, ensure_ascii=False)}"
-            )
-            scratchpad.append(f"Observation: {tool_result.content}")
+            raise
 
         self.logger.warning("ReAct agent exceeded max steps=%s", self.max_steps)
+        self.persist_memory_turn(
+            memory_scope=memory_scope,
+            message=message,
+            response="ReAct agent exceeded the maximum number of steps.",
+            tool_results=tuple(tool_results),
+            success=False,
+        )
         raise RuntimeError("ReAct agent exceeded the maximum number of steps.")
 
     def _build_prompt(self, *, message: str, scratchpad: list[str]) -> str:
