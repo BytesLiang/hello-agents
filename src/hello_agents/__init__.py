@@ -10,6 +10,7 @@ from hello_agents.memory import (
     MemoryRecord,
     MemoryScope,
 )
+from hello_agents.rag import RagConfig, RagIndexer, RagRetriever
 from hello_agents.react_agent import ReActAgent
 from hello_agents.tools import (
     TavilySearchTool,
@@ -20,6 +21,7 @@ from hello_agents.tools import (
     ToolSchema,
     build_default_tool_registry,
 )
+from hello_agents.tools.rag import RagSearchTool
 
 __all__ = [
     "ChatAgent",
@@ -30,6 +32,10 @@ __all__ = [
     "MemoryKind",
     "MemoryRecord",
     "MemoryScope",
+    "RagConfig",
+    "RagIndexer",
+    "RagRetriever",
+    "RagSearchTool",
     "ReActAgent",
     "TavilySearchTool",
     "Tool",

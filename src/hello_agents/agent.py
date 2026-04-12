@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 from hello_agents.llm.client import LLMClient
 from hello_agents.memory import MemoryQueryResult, MemoryScope
 from hello_agents.memory.base import Memory
+from hello_agents.rag.models import RagChunk
+from hello_agents.rag.retriever import RagRetriever
 from hello_agents.tools.base import ToolResult
 from hello_agents.tools.registry import ToolRegistry
 
@@ -22,6 +25,7 @@ class Agent(ABC):
         tools: ToolRegistry | None = None,
         use_tools: bool = False,
         memory: Memory | None = None,
+        rag: RagRetriever | None = None,
     ) -> None:
         """Store the common agent identity, LLM dependency, and tools."""
 
@@ -30,6 +34,7 @@ class Agent(ABC):
         self.tools = tools or ToolRegistry()
         self.use_tools = use_tools
         self.memory = memory
+        self.rag = rag
         self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.name}")
 
     def describe_tools(self) -> list[dict[str, object]]:
@@ -59,13 +64,22 @@ class Agent(ABC):
     ) -> str:
         """Inject queried memory context into the user message when enabled."""
 
-        if self.memory is None or memory_scope is None:
+        blocks: list[str] = []
+        if self.rag is not None:
+            rag_chunks = self.rag.query(message)
+            rag_block = self._render_rag_chunks(rag_chunks)
+            if rag_block:
+                blocks.append(rag_block)
+
+        if self.memory is not None and memory_scope is not None:
+            query_result = self.memory.query(message, scope=memory_scope)
+            memory_block = self._render_memory_query_result(query_result)
+            if memory_block:
+                blocks.append(memory_block)
+
+        if not blocks:
             return message
-        query_result = self.memory.query(message, scope=memory_scope)
-        block = self._render_memory_query_result(query_result)
-        if not block:
-            return message
-        return f"{block}\n\nUser request:\n{message}"
+        return "\n\n".join(blocks) + f"\n\nUser request:\n{message}"
 
     def persist_memory_turn(
         self,
@@ -147,6 +161,20 @@ class Agent(ABC):
         if not sections:
             return ""
         return "[MEMORY]\n" + "\n\n".join(sections) + "\n[/MEMORY]"
+
+    @staticmethod
+    def _render_rag_chunks(chunks: Sequence[RagChunk]) -> str:
+        """Render retrieved RAG chunks into a prompt block."""
+
+        if not chunks:
+            return ""
+        lines: list[str] = []
+        for chunk in chunks:
+            snippet = chunk.content.strip().replace("\n", " ")
+            if len(snippet) > 300:
+                snippet = snippet[:300].rstrip() + "..."
+            lines.append(f"- {chunk.source}: {snippet}")
+        return "[RAG]\n" + "\n".join(lines) + "\n[/RAG]"
 
     @abstractmethod
     def run(

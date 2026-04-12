@@ -7,6 +7,7 @@ from hello_agents.llm.client import LLMClient
 from hello_agents.llm.types import LLMMessage
 from hello_agents.memory import MemoryScope
 from hello_agents.memory.base import Memory
+from hello_agents.rag.retriever import RagRetriever
 from hello_agents.tools.base import ToolResult
 from hello_agents.tools.registry import ToolRegistry
 
@@ -21,6 +22,7 @@ class ChatAgent(Agent):
         tools: ToolRegistry | None = None,
         use_tools: bool = False,
         memory: Memory | None = None,
+        rag: RagRetriever | None = None,
         *,
         system_prompt: str = "You are a helpful assistant.",
         max_tool_rounds: int = 3,
@@ -33,6 +35,7 @@ class ChatAgent(Agent):
             tools=tools,
             use_tools=use_tools,
             memory=memory,
+            rag=rag,
         )
         self.system_prompt = system_prompt
         self.max_tool_rounds = max_tool_rounds

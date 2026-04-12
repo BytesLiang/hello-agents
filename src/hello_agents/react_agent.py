@@ -11,6 +11,7 @@ from hello_agents.llm.client import LLMClient
 from hello_agents.llm.types import LLMMessage
 from hello_agents.memory import MemoryScope
 from hello_agents.memory.base import Memory
+from hello_agents.rag.retriever import RagRetriever
 from hello_agents.tools.base import ToolResult
 from hello_agents.tools.registry import ToolRegistry
 
@@ -70,6 +71,7 @@ class ReActAgent(Agent):
         tools: ToolRegistry | None = None,
         use_tools: bool = True,
         memory: Memory | None = None,
+        rag: RagRetriever | None = None,
         *,
         system_prompt: str | None = None,
         max_steps: int = 5,
@@ -82,6 +84,7 @@ class ReActAgent(Agent):
             tools=tools,
             use_tools=use_tools,
             memory=memory,
+            rag=rag,
         )
         self.system_prompt = _build_react_system_prompt(system_prompt)
         self.max_steps = max_steps

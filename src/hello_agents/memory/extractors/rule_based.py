@@ -215,13 +215,13 @@ class RuleBasedMemoryAnalyzer(MemoryAnalyzer):
         """Build an episodic candidate for the completed task."""
 
         tool_names = tuple(result.tool_name for result in tool_results)
-        summary = _truncate(f"Task: {message} | Result: {response}", 220)
-        content_lines = [f"Task: {message}", f"Assistant: {response}"]
-        if tool_results:
-            content_lines.append("Tools:")
-            content_lines.extend(
-                f"- {result.tool_name}: {result.content}" for result in tool_results
-            )
+        summary = _truncate(f"Task: {message} | Result: {response}", 180)
+        content_lines = [
+            f"Task: {_truncate(message, 240)}",
+            f"Result: {_truncate(response, 240)}",
+        ]
+        if tool_names:
+            content_lines.append(f"Tools: {', '.join(tool_names)}")
         return MemoryCandidate(
             kind=MemoryKind.EPISODIC,
             content="\n".join(content_lines),

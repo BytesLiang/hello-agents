@@ -371,6 +371,8 @@ class LayeredMemory(Memory):
         if candidate.kind == MemoryKind.SEMANTIC_PREFERENCE:
             if candidate.confidence < 0.65:
                 return "low_confidence_preference"
+            if not candidate.key or not candidate.value:
+                return "missing_semantic_key_value"
             return None
 
         if candidate.kind == MemoryKind.SEMANTIC_FACT:
@@ -378,6 +380,8 @@ class LayeredMemory(Memory):
                 return "fact_not_confirmed"
             if candidate.confidence < 0.75:
                 return "low_confidence_fact"
+            if not candidate.key or not candidate.value:
+                return "missing_semantic_key_value"
             return None
 
         if candidate.kind == MemoryKind.PROCEDURAL:
@@ -385,6 +389,8 @@ class LayeredMemory(Memory):
             tool_count = _metadata_int(candidate.metadata, "tool_count", default=0)
             if candidate.confidence < 0.75:
                 return "low_confidence_procedure"
+            if tool_count == 0 and len(candidate.content) > 240:
+                return "generic_procedure"
             if tool_count == 0 and task_type == "general_task":
                 return "generic_procedure"
             return None
@@ -490,6 +496,12 @@ def _candidate_to_record(
 ) -> MemoryRecord:
     """Convert a candidate into a generic memory record."""
 
+    content = candidate.content
+    summary = candidate.summary
+    if candidate.kind == MemoryKind.EPISODIC:
+        content = _truncate_text(content, 600)
+        summary = _truncate_text(summary, 200)
+
     return MemoryRecord(
         kind=candidate.kind,
         user_id=scope.user_id,
@@ -498,8 +510,8 @@ def _candidate_to_record(
         run_id=scope.run_id,
         key=candidate.key,
         value=candidate.value,
-        content=candidate.content,
-        summary=candidate.summary,
+        content=content,
+        summary=summary,
         confidence=candidate.confidence,
         confirmed=candidate.confirmed,
         metadata=dict(candidate.metadata),
@@ -720,6 +732,14 @@ def _metadata_int(
         except ValueError:
             return default
     return default
+
+
+def _truncate_text(value: str, limit: int) -> str:
+    """Return a truncated string with a hard length cap."""
+
+    if len(value) <= limit:
+        return value
+    return value[:limit].rstrip() + "..."
 
 
 def _from_procedural_record(record: ProceduralMemoryRecord) -> MemoryRecord:

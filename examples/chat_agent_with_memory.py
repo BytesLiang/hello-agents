@@ -8,13 +8,22 @@ from pathlib import Path
 
 from dotenv import load_dotenv  # type: ignore[import-not-found]
 
-from hello_agents import ChatAgent, LayeredMemory, MemoryConfig, MemoryScope
+from hello_agents import (
+    ChatAgent,
+    LayeredMemory,
+    MemoryConfig,
+    MemoryScope,
+    RagConfig,
+    RagIndexer,
+    RagRetriever,
+)
 from hello_agents.llm import LLMClient, LLMConfig
 from hello_agents.memory import SQLiteStoreConfig
 from hello_agents.memory.extractors import (
     LLMMemoryAnalyzer,
     RuleBasedMemoryAnalyzer,
 )
+from hello_agents.rag.qdrant_store import RagQdrantStore
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,12 +89,31 @@ def build_agent(*, system_prompt: str, memory_db: Path, agent_id: str) -> ChatAg
             fallback=RuleBasedMemoryAnalyzer(),
         ),
     )
+    rag = _build_rag()
     return ChatAgent(
         name=agent_id,
         llm=llm,
         memory=memory,
+        rag=rag,
         system_prompt=system_prompt,
     )
+
+
+def _build_rag() -> RagRetriever | None:
+    """Build and optionally index RAG sources when enabled."""
+
+    rag_config = RagConfig.from_env()
+    if not rag_config.enabled or not rag_config.paths:
+        return None
+    if rag_config.embed is None or rag_config.qdrant_url is None:
+        logging.warning("RAG enabled but missing embeddings or Qdrant URL.")
+        return None
+
+    store = RagQdrantStore(rag_config)
+    indexer = RagIndexer(config=rag_config, store=store)
+    for path in rag_config.paths:
+        indexer.index_folder(path)
+    return RagRetriever(config=rag_config, store=store)
 
 
 def main() -> None:
