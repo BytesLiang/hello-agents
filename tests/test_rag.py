@@ -74,10 +74,22 @@ def test_indexer_indexes_local_files(tmp_path: Path) -> None:
     )
 
     store = StubRagStore()
+
+    class StubConverter:
+        """Provide a minimal MarkItDown-like converter."""
+
+        def convert(self, path: str) -> object:
+            """Return a result with text_content."""
+
+            with open(path, encoding="utf-8") as handle:
+                content = handle.read()
+            return type("Result", (), {"text_content": content})()
+
     indexer = RagIndexer.__new__(RagIndexer)
     indexer._config = config  # type: ignore[attr-defined]
     indexer._embedder = StubEmbedder()  # type: ignore[attr-defined]
     indexer._store = store  # type: ignore[attr-defined]
+    indexer._converter = StubConverter()  # type: ignore[attr-defined]
 
     indexed = indexer.index_folder(tmp_path)
     assert indexed > 0

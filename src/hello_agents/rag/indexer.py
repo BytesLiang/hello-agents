@@ -6,6 +6,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from uuid import uuid4
 
+from markitdown import MarkItDown  # type: ignore[import-not-found]
+
 from hello_agents.memory.embeddings import build_embedder
 from hello_agents.rag.config import RagConfig
 from hello_agents.rag.models import RagChunk
@@ -28,13 +30,14 @@ class RagIndexer:
         self._config = config
         self._embedder = build_embedder(config.embed)
         self._store = store or RagQdrantStore(config)
+        self._converter = MarkItDown()
 
     def index_folder(self, path: Path, *, glob: str = "**/*") -> int:
         """Index all readable text files inside a folder."""
 
         chunks: list[RagChunk] = []
         for file_path in _iter_files(path, glob=glob):
-            text = _read_text(file_path)
+            text = self._read_text(file_path)
             if not text:
                 continue
             for index, chunk_text in enumerate(
@@ -64,6 +67,16 @@ class RagIndexer:
         self._store.upsert(chunks, embeddings)
         return len(chunks)
 
+    def _read_text(self, path: Path) -> str:
+        """Convert a file into Markdown text via MarkItDown."""
+
+        try:
+            result = self._converter.convert(str(path))
+        except Exception:
+            return ""
+        text = getattr(result, "text_content", "")
+        return text if isinstance(text, str) else ""
+
 
 def _iter_files(path: Path, *, glob: str) -> Iterable[Path]:
     """Yield files matching the glob under a path."""
@@ -76,15 +89,6 @@ def _iter_files(path: Path, *, glob: str) -> Iterable[Path]:
     for file_path in path.glob(glob):
         if file_path.is_file():
             yield file_path
-
-
-def _read_text(path: Path) -> str:
-    """Read a file as UTF-8 text, ignoring decode errors."""
-
-    try:
-        return path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return ""
 
 
 def _chunk_text(text: str, *, chunk_size: int, overlap: int) -> list[str]:
