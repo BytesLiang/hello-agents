@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
-from typing import cast
-from urllib import error, request
+from typing import Any
+
+from qdrant_client import QdrantClient, models  # type: ignore[import-not-found]
 
 from hello_agents.memory.base import VectorStore
 from hello_agents.memory.config import QdrantStoreConfig
@@ -18,7 +18,7 @@ from hello_agents.memory.models import (
 
 
 class QdrantVectorStore(VectorStore):
-    """Persist long-term memory embeddings inside Qdrant via its HTTP API."""
+    """Persist long-term memory embeddings using the official Qdrant client."""
 
     def __init__(self, config: QdrantStoreConfig) -> None:
         """Store the Qdrant connection configuration."""
@@ -26,6 +26,11 @@ class QdrantVectorStore(VectorStore):
         if not config.url:
             raise ValueError("Qdrant vector store requires QDRANT_URL.")
         self._config = config
+        self._client = QdrantClient(
+            url=config.url,
+            api_key=config.api_key,
+            timeout=config.timeout,
+        )
         self._vector_size: int | None = None
 
     def upsert(self, document: VectorDocument, embedding: Sequence[float]) -> None:
@@ -42,18 +47,16 @@ class QdrantVectorStore(VectorStore):
             "confidence": document.confidence,
             "created_at": document.created_at.isoformat(),
         }
-        self._request(
-            "PUT",
-            f"/collections/{self._config.collection_name}/points",
-            {
-                "points": [
-                    {
-                        "id": document.memory_id,
-                        "vector": list(embedding),
-                        "payload": payload,
-                    }
-                ]
-            },
+        self._client.upsert(
+            collection_name=self._config.collection_name,
+            points=[
+                models.PointStruct(
+                    id=document.memory_id,
+                    vector=list(embedding),
+                    payload=payload,
+                )
+            ],
+            wait=True,
         )
 
     def search(
@@ -66,98 +69,65 @@ class QdrantVectorStore(VectorStore):
     ) -> list[VectorSearchHit]:
         """Search similar memory points scoped to a user and agent namespace."""
 
-        must_conditions: list[dict[str, object]] = [
-            {"key": "user_id", "match": {"value": context.user_id}},
-            {"key": "agent_id", "match": {"value": context.agent_id}},
+        must_conditions: list[models.FieldCondition] = [
+            models.FieldCondition(
+                key="user_id",
+                match=models.MatchValue(value=context.user_id),
+            ),
+            models.FieldCondition(
+                key="agent_id",
+                match=models.MatchValue(value=context.agent_id),
+            ),
         ]
         if memory_kinds:
             must_conditions.append(
-                {
-                    "key": "memory_kind",
-                    "match": {
-                        "any": [memory_kind.value for memory_kind in memory_kinds],
-                    },
-                }
-            )
-        response = self._request(
-            "POST",
-            f"/collections/{self._config.collection_name}/points/search",
-            {
-                "vector": list(embedding),
-                "limit": limit,
-                "filter": {"must": must_conditions},
-                "with_payload": True,
-            },
-        )
-        result = response.get("result", [])
-        if not isinstance(result, list):
-            return []
-        hits: list[VectorSearchHit] = []
-        for hit in result:
-            if not isinstance(hit, dict):
-                continue
-            payload = hit.get("payload", {})
-            if not isinstance(payload, dict):
-                continue
-            memory_kind = payload.get("memory_kind")
-            if not isinstance(memory_kind, str):
-                continue
-            hits.append(
-                VectorSearchHit(
-                    memory_id=str(hit.get("id")),
-                    memory_kind=MemoryKind(memory_kind),
-                    score=float(hit.get("score", 0.0)),
-                    payload=payload,
+                models.FieldCondition(
+                    key="memory_kind",
+                    match=models.MatchAny(
+                        any=[memory_kind.value for memory_kind in memory_kinds]
+                    ),
                 )
             )
-        return hits
+
+        response = self._client.query_points(
+            collection_name=self._config.collection_name,
+            query=list(embedding),
+            query_filter=models.Filter(must=must_conditions),
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+        return [
+            _scored_point_to_hit(point)
+            for point in response.points
+            if isinstance(point.payload, dict)
+            and isinstance(point.payload.get("memory_kind"), str)
+        ]
 
     def _ensure_collection(self, *, vector_size: int) -> None:
         """Create the target collection if needed."""
 
         self._vector_size = vector_size
-        try:
-            self._request(
-                "PUT",
-                f"/collections/{self._config.collection_name}",
-                {
-                    "vectors": {
-                        "size": vector_size,
-                        "distance": "Cosine",
-                    }
-                },
-            )
-        except RuntimeError:
-            self._vector_size = vector_size
+        if self._client.collection_exists(self._config.collection_name):
+            return
+        self._client.create_collection(
+            collection_name=self._config.collection_name,
+            vectors_config=models.VectorParams(
+                size=vector_size,
+                distance=models.Distance.COSINE,
+            ),
+            timeout=int(self._config.timeout),
+        )
 
-    def _request(
-        self,
-        method: str,
-        path: str,
-        payload: dict[str, object],
-    ) -> dict[str, object]:
-        """Issue a JSON request to the Qdrant HTTP API."""
 
-        data = json.dumps(payload).encode("utf-8")
-        base_url = self._config.url
-        if base_url is None:
-            raise RuntimeError("Qdrant URL is not configured.")
-        url = f"{base_url.rstrip('/')}{path}"
-        headers = {"Content-Type": "application/json"}
-        if self._config.api_key:
-            headers["api-key"] = self._config.api_key
-        request_obj = request.Request(url, data=data, headers=headers, method=method)
-        try:
-            with request.urlopen(
-                request_obj,
-                timeout=self._config.timeout,
-            ) as response:
-                raw = response.read().decode("utf-8")
-        except error.URLError as exc:
-            raise RuntimeError(f"Qdrant request failed: {exc}") from exc
-        if not raw:
-            return {}
-        parsed = json.loads(raw)
-        if not isinstance(parsed, dict):
-            raise RuntimeError("Qdrant returned a non-object JSON payload.")
-        return cast(dict[str, object], parsed)
+def _scored_point_to_hit(point: Any) -> VectorSearchHit:
+    """Convert a Qdrant scored point into the framework search hit."""
+
+    payload = point.payload if isinstance(point.payload, dict) else {}
+    memory_kind = payload.get("memory_kind", "")
+    return VectorSearchHit(
+        memory_id=str(point.id),
+        memory_kind=MemoryKind(str(memory_kind)),
+        score=float(point.score or 0.0),
+        payload=payload,
+    )
