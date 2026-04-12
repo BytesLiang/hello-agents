@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--paths",
-        default="",
+        default="docs",
         help="Comma-separated list of folders/files to index.",
     )
     parser.add_argument(

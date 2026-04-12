@@ -63,7 +63,9 @@ def test_indexer_indexes_local_files(tmp_path: Path) -> None:
     """Verify indexing returns a positive chunk count."""
 
     file_path = tmp_path / "notes.txt"
-    file_path.write_text("Hello RAG world.\nThis is a test document.")
+    file_path.write_text(
+        "# Intro\n\nHello RAG world.\n\n## Details\n\nThis is a test document."
+    )
     config = RagConfig(
         enabled=True,
         paths=(tmp_path,),
@@ -94,6 +96,8 @@ def test_indexer_indexes_local_files(tmp_path: Path) -> None:
     indexed = indexer.index_folder(tmp_path)
     assert indexed > 0
     assert store._chunks
+    assert store._chunks[0].metadata["heading_path"] == "Intro"
+    assert "Section: Intro" in store._chunks[0].content
 
 
 def test_retriever_returns_chunks() -> None:

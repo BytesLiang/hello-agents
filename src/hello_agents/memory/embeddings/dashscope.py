@@ -11,6 +11,8 @@ from hello_agents.memory.config import EmbedConfig
 if TYPE_CHECKING:
     from openai import OpenAI
 
+MAX_BATCH_SIZE = 10
+
 
 class DashScopeEmbedder(Embedder):
     """Generate embeddings through an OpenAI-compatible DashScope endpoint."""
@@ -32,8 +34,18 @@ class DashScopeEmbedder(Embedder):
 
         if not texts:
             return []
-        response = self._client.embeddings.create(
-            model=self._config.model_name,
-            input=list(texts),
-        )
-        return [list(item.embedding) for item in response.data]
+
+        embeddings: list[list[float]] = []
+        for batch in _batched(texts, size=MAX_BATCH_SIZE):
+            response = self._client.embeddings.create(
+                model=self._config.model_name,
+                input=batch,
+            )
+            embeddings.extend(list(item.embedding) for item in response.data)
+        return embeddings
+
+
+def _batched(texts: Sequence[str], *, size: int) -> list[list[str]]:
+    """Split texts into fixed-size batches."""
+
+    return [list(texts[index : index + size]) for index in range(0, len(texts), size)]
