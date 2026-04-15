@@ -38,4 +38,4 @@ class RagRetriever:
             return []
         top_k = top_k or self._config.top_k
         embedding = self._embedder.embed_texts([text])[0]
-        return self._store.search(embedding, top_k=top_k)
+        return self._store.search_hybrid(text, embedding, top_k=top_k)

@@ -59,6 +59,9 @@ See [`docs/llm.md`](/Users/liang/code/hello-agents/docs/llm.md) and
 [`examples/llm_chat.py`](/Users/liang/code/hello-agents/examples/llm_chat.py)
 for complete usage examples.
 
+See [`docs/memory_and_rag.md`](/Users/liang/code/hello-agents/docs/memory_and_rag.md)
+for the current memory and RAG design.
+
 ## ChatAgent With Tavily
 
 The project also includes a complete `ChatAgent + TavilySearchTool` example.

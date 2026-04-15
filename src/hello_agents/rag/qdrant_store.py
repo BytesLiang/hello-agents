@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
+from collections import Counter
 from collections.abc import Sequence
 from typing import Any
 
@@ -12,7 +15,10 @@ from hello_agents.rag.models import RagChunk
 
 
 class RagQdrantStore:
-    """Persist and search RAG chunks using the official Qdrant client."""
+    """Persist and search RAG chunks using Qdrant hybrid retrieval."""
+
+    _DENSE_VECTOR_NAME = "dense"
+    _SPARSE_VECTOR_NAME = "sparse"
 
     def __init__(self, config: RagConfig) -> None:
         """Store Qdrant connection settings."""
@@ -42,7 +48,10 @@ class RagQdrantStore:
         points = [
             models.PointStruct(
                 id=chunk.id,
-                vector=list(embedding),
+                vector={
+                    self._DENSE_VECTOR_NAME: list(embedding),
+                    self._SPARSE_VECTOR_NAME: _text_to_sparse_vector(chunk.content),
+                },
                 payload={
                     "source": chunk.source,
                     "content": chunk.content,
@@ -60,9 +69,47 @@ class RagQdrantStore:
     def search(self, embedding: Sequence[float], *, top_k: int) -> list[RagChunk]:
         """Search for the top-k closest chunks."""
 
+        # The retriever does not currently pass the raw query text, so hybrid
+        # search is exposed through `search_hybrid()` below and used by the
+        # retriever. Keep `search()` as dense-only compatibility fallback.
         response = self._client.query_points(
             collection_name=self._config.collection,
             query=list(embedding),
+            using=self._DENSE_VECTOR_NAME,
+            limit=top_k,
+            with_payload=True,
+            with_vectors=False,
+        )
+        return [
+            _scored_point_to_chunk(point)
+            for point in response.points
+            if isinstance(point.payload, dict)
+        ]
+
+    def search_hybrid(
+        self,
+        text: str,
+        embedding: Sequence[float],
+        *,
+        top_k: int,
+    ) -> list[RagChunk]:
+        """Search with dense+sparse hybrid retrieval and RRF fusion."""
+
+        response = self._client.query_points(
+            collection_name=self._config.collection,
+            prefetch=[
+                models.Prefetch(
+                    query=list(embedding),
+                    using=self._DENSE_VECTOR_NAME,
+                    limit=max(top_k * 2, top_k),
+                ),
+                models.Prefetch(
+                    query=_text_to_sparse_vector(text),
+                    using=self._SPARSE_VECTOR_NAME,
+                    limit=max(top_k * 2, top_k),
+                ),
+            ],
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
             limit=top_k,
             with_payload=True,
             with_vectors=False,
@@ -81,10 +128,17 @@ class RagQdrantStore:
             return
         self._client.create_collection(
             collection_name=self._config.collection,
-            vectors_config=models.VectorParams(
-                size=vector_size,
-                distance=models.Distance.COSINE,
-            ),
+            vectors_config={
+                self._DENSE_VECTOR_NAME: models.VectorParams(
+                    size=vector_size,
+                    distance=models.Distance.COSINE,
+                )
+            },
+            sparse_vectors_config={
+                self._SPARSE_VECTOR_NAME: models.SparseVectorParams(
+                    modifier=models.Modifier.IDF
+                )
+            },
             timeout=int(self._config.qdrant_timeout),
         )
 
@@ -101,3 +155,31 @@ def _scored_point_to_chunk(point: Any) -> RagChunk:
         score=float(point.score or 0.0),
         metadata=dict(metadata) if isinstance(metadata, dict) else {},
     )
+
+
+def _text_to_sparse_vector(text: str) -> models.SparseVector:
+    """Convert text to a stable sparse vector using hashed token frequencies."""
+
+    counts = Counter(_tokenize(text))
+    if not counts:
+        return models.SparseVector(indices=[], values=[])
+    items = sorted(
+        (_token_to_index(token), float(count)) for token, count in counts.items()
+    )
+    return models.SparseVector(
+        indices=[index for index, _ in items],
+        values=[value for _, value in items],
+    )
+
+
+def _tokenize(text: str) -> list[str]:
+    """Extract lowercase lexical tokens for sparse retrieval."""
+
+    return re.findall(r"[a-zA-Z0-9_\u4e00-\u9fff]+", text.lower())
+
+
+def _token_to_index(token: str) -> int:
+    """Map a token to a stable sparse-dimension index."""
+
+    digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "big") % 2_147_483_647

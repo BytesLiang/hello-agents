@@ -10,6 +10,7 @@ from hello_agents.llm.client import LLMClient
 from hello_agents.rag.config import RagConfig
 from hello_agents.rag.indexer import RagIndexer
 from hello_agents.rag.models import RagChunk
+from hello_agents.rag.qdrant_store import _text_to_sparse_vector
 from hello_agents.rag.retriever import RagRetriever
 from hello_agents.tools.rag import RagSearchTool
 
@@ -46,6 +47,18 @@ class StubRagStore:
         """Return the first top-k chunks for simplicity."""
 
         del embedding
+        return list(self._chunks[:top_k])
+
+    def search_hybrid(
+        self,
+        text: str,
+        embedding: Sequence[float],
+        *,
+        top_k: int,
+    ) -> list[RagChunk]:
+        """Return the first top-k chunks for hybrid retrieval tests."""
+
+        del text, embedding
         return list(self._chunks[:top_k])
 
 
@@ -153,3 +166,14 @@ def test_agent_includes_rag_block() -> None:
     message = agent.build_effective_message("Hello")
     assert "[RAG]" in message
     assert "Injected context" in message
+
+
+def test_sparse_vector_generation_is_stable() -> None:
+    """Verify sparse vectors are non-empty and deterministic."""
+
+    first = _text_to_sparse_vector("Python agent framework")
+    second = _text_to_sparse_vector("Python agent framework")
+
+    assert first.indices
+    assert first.indices == second.indices
+    assert first.values == second.values
