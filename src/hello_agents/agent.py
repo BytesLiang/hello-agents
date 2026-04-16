@@ -6,10 +6,10 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
+from hello_agents.context import ContextEngine, ContextRequest
 from hello_agents.llm.client import LLMClient
-from hello_agents.memory import MemoryQueryResult, MemoryScope
+from hello_agents.memory import MemoryScope
 from hello_agents.memory.base import Memory
-from hello_agents.rag.models import RagChunk
 from hello_agents.rag.retriever import RagRetriever
 from hello_agents.tools.base import ToolResult
 from hello_agents.tools.registry import ToolRegistry
@@ -26,6 +26,7 @@ class Agent(ABC):
         use_tools: bool = False,
         memory: Memory | None = None,
         rag: RagRetriever | None = None,
+        context_engine: ContextEngine | None = None,
     ) -> None:
         """Store the common agent identity, LLM dependency, and tools."""
 
@@ -35,6 +36,7 @@ class Agent(ABC):
         self.use_tools = use_tools
         self.memory = memory
         self.rag = rag
+        self.context_engine = context_engine or ContextEngine(memory=memory, rag=rag)
         self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.name}")
 
     def describe_tools(self) -> list[dict[str, object]]:
@@ -61,25 +63,18 @@ class Agent(ABC):
         message: str,
         *,
         memory_scope: MemoryScope | None = None,
+        tool_results: Sequence[ToolResult] = (),
     ) -> str:
-        """Inject queried memory context into the user message when enabled."""
+        """Build the prompt-ready message for the current user request."""
 
-        blocks: list[str] = []
-        if self.rag is not None:
-            rag_chunks = self.rag.query(message)
-            rag_block = self._render_rag_chunks(rag_chunks)
-            if rag_block:
-                blocks.append(rag_block)
-
-        if self.memory is not None and memory_scope is not None:
-            query_result = self.memory.query(message, scope=memory_scope)
-            memory_block = self._render_memory_query_result(query_result)
-            if memory_block:
-                blocks.append(memory_block)
-
-        if not blocks:
-            return message
-        return "\n\n".join(blocks) + f"\n\nUser request:\n{message}"
+        envelope = self.context_engine.compose(
+            ContextRequest(
+                message=message,
+                memory_scope=memory_scope,
+                tool_results=tuple(tool_results),
+            )
+        )
+        return envelope.rendered_message
 
     def persist_memory_turn(
         self,
@@ -105,76 +100,6 @@ class Agent(ABC):
             self.memory.commit(proposal, scope=memory_scope)
         except Exception:
             self.logger.exception("Failed to persist memory for agent=%s", self.name)
-
-    @staticmethod
-    def _render_memory_query_result(query_result: MemoryQueryResult) -> str:
-        """Render queried memory into a prompt block."""
-
-        sections: list[str] = []
-        plan_entries = [
-            record.content
-            for record in query_result.working
-            if record.kind.value == "working_plan"
-        ]
-        if plan_entries:
-            sections.append(
-                "Current plan:\n" + "\n".join(f"- {plan}" for plan in plan_entries[-2:])
-            )
-
-        context_entries = [
-            record.content
-            for record in query_result.working
-            if record.kind.value == "working_context"
-        ]
-        if context_entries:
-            sections.append(
-                "Session context:\n"
-                + "\n".join(f"- {item}" for item in context_entries[-4:])
-            )
-
-        if query_result.preferences:
-            sections.append(
-                "User preferences:\n"
-                + "\n".join(
-                    f"- {record.summary}" for record in query_result.preferences
-                )
-            )
-
-        if query_result.facts:
-            sections.append(
-                "Confirmed facts:\n"
-                + "\n".join(f"- {record.summary}" for record in query_result.facts)
-            )
-
-        if query_result.episodes:
-            sections.append(
-                "Relevant task history:\n"
-                + "\n".join(f"- {record.summary}" for record in query_result.episodes)
-            )
-
-        if query_result.procedures:
-            sections.append(
-                "Successful experience:\n"
-                + "\n".join(f"- {record.content}" for record in query_result.procedures)
-            )
-
-        if not sections:
-            return ""
-        return "[MEMORY]\n" + "\n\n".join(sections) + "\n[/MEMORY]"
-
-    @staticmethod
-    def _render_rag_chunks(chunks: Sequence[RagChunk]) -> str:
-        """Render retrieved RAG chunks into a prompt block."""
-
-        if not chunks:
-            return ""
-        lines: list[str] = []
-        for chunk in chunks:
-            snippet = chunk.content.strip().replace("\n", " ")
-            if len(snippet) > 300:
-                snippet = snippet[:300].rstrip() + "..."
-            lines.append(f"- {chunk.source}: {snippet}")
-        return "[RAG]\n" + "\n".join(lines) + "\n[/RAG]"
 
     @abstractmethod
     def run(

@@ -5,7 +5,20 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from qdrant_client import QdrantClient, models  # type: ignore[import-not-found]
+try:
+    from qdrant_client import QdrantClient, models  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths.
+    QdrantClient = None  # type: ignore[assignment]
+
+    class _MissingQdrantModels:
+        """Raise a clear error when Qdrant-only symbols are used without deps."""
+
+        def __getattr__(self, name: str) -> Any:
+            raise ModuleNotFoundError(
+                "qdrant_client is required for Qdrant-backed memory storage."
+            )
+
+    models = _MissingQdrantModels()
 
 from hello_agents.memory.base import VectorStore
 from hello_agents.memory.config import QdrantStoreConfig
@@ -25,6 +38,10 @@ class QdrantVectorStore(VectorStore):
 
         if not config.url:
             raise ValueError("Qdrant vector store requires QDRANT_URL.")
+        if QdrantClient is None:
+            raise ModuleNotFoundError(
+                "qdrant_client is required for Qdrant-backed memory storage."
+            )
         self._config = config
         self._client = QdrantClient(
             url=config.url,

@@ -19,6 +19,13 @@ They are intentionally separate:
 At prompt-build time, the agent can prepend both a `[RAG]` block and a
 `[MEMORY]` block to the user message.
 
+The framework now places a dedicated context-engineering layer above these
+retrieval subsystems:
+
+- memory and RAG remain responsible for retrieval
+- `ContextEngine` is responsible for context assembly, budgeting, and rendering
+- the final output still targets the same chat-message protocol
+
 ## Memory Design
 
 The public entrypoint is `LayeredMemory` in
@@ -88,7 +95,7 @@ At prompt time:
 2. working memory is loaded directly from the working store
 3. long-term memory is queried from SQLite by kind
 4. if Qdrant is enabled, vector scores are merged into ranking
-5. the agent renders the result into a `[MEMORY]` block
+5. the context-engineering layer renders the result into a `[MEMORY]` block
 
 The current rendering lives in `src/hello_agents/agent.py`.
 
@@ -233,8 +240,8 @@ RAG uses hybrid retrieval with both dense and sparse vectors.
 There are two access paths:
 
 - automatic augmentation:
-  - `Agent.build_effective_message()` retrieves top chunks and prepends a
-    `[RAG]` block
+  - `Agent.build_effective_message()` asks `ContextEngine` to retrieve top chunks
+    and prepend a `[RAG]` block
 - tool-driven retrieval:
   - `RagSearchTool` exposes retrieval as a callable tool
 
@@ -259,11 +266,19 @@ Prompt construction currently follows this shape:
 
 - `[RAG]` block first, if RAG is enabled and returns chunks
 - `[MEMORY]` block second, if memory is enabled and returns content
+- `[TOOLS]` block third, if recent tool observations are available
 - user request last
 
 This means:
 
 - RAG supplies external source context
 - memory supplies conversation state and accumulated agent knowledge
+- tool results supply recent runtime observations
+
+The context-engineering layer owns:
+
+- collecting data from memory, RAG, and tool observations
+- applying lightweight section and character budgets
+- rendering the final prompt payload while preserving source order
 
 They are independent subsystems and can be enabled separately.

@@ -1,6 +1,12 @@
 """Top-level package for the hello_agents project."""
 
 from hello_agents.chat_agent import ChatAgent
+from hello_agents.context import (
+    ContextConfig,
+    ContextEngine,
+    ContextRequest,
+    ContextSection,
+)
 from hello_agents.memory import (
     EmbedConfig,
     LayeredMemory,
@@ -25,6 +31,10 @@ from hello_agents.tools.rag import RagSearchTool
 
 __all__ = [
     "ChatAgent",
+    "ContextConfig",
+    "ContextEngine",
+    "ContextRequest",
+    "ContextSection",
     "EmbedConfig",
     "LayeredMemory",
     "Memory",

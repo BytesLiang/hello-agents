@@ -186,6 +186,7 @@ def test_chat_agent_executes_tool_calls_and_continues_conversation() -> None:
             tool_call_id="call_1",
         ),
     ]
+    assert "[TOOLS]" not in second_messages[1].content
 
 
 def test_chat_agent_limits_tool_rounds() -> None:

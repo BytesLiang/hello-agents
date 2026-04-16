@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import TypedDict
 from uuid import uuid4
 
-from markitdown import MarkItDown  # type: ignore[import-not-found]
+try:
+    from markitdown import MarkItDown  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths.
+    MarkItDown = None  # type: ignore[assignment]
 
 from hello_agents.memory.embeddings import build_embedder
 from hello_agents.rag.config import RagConfig
@@ -36,6 +39,8 @@ class RagIndexer:
 
         if config.embed is None:
             raise ValueError("RAG indexing requires embedding configuration.")
+        if MarkItDown is None:
+            raise ModuleNotFoundError("markitdown is required for RAG indexing.")
         self._config = config
         self._embedder = build_embedder(config.embed)
         self._store = store or RagQdrantStore(config)

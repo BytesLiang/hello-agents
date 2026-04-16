@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from json import JSONDecodeError
 
 from hello_agents.agent import Agent
+from hello_agents.context import ContextEngine
 from hello_agents.llm.client import LLMClient
 from hello_agents.llm.types import LLMMessage
 from hello_agents.memory import MemoryScope
@@ -72,6 +73,7 @@ class ReActAgent(Agent):
         use_tools: bool = True,
         memory: Memory | None = None,
         rag: RagRetriever | None = None,
+        context_engine: ContextEngine | None = None,
         *,
         system_prompt: str | None = None,
         max_steps: int = 5,
@@ -85,6 +87,7 @@ class ReActAgent(Agent):
             use_tools=use_tools,
             memory=memory,
             rag=rag,
+            context_engine=context_engine,
         )
         self.system_prompt = _build_react_system_prompt(system_prompt)
         self.max_steps = max_steps
@@ -97,10 +100,6 @@ class ReActAgent(Agent):
     ) -> str:
         """Run the ReAct reasoning loop until a final answer is produced."""
 
-        effective_message = self.build_effective_message(
-            message,
-            memory_scope=memory_scope,
-        )
         self.logger.info(
             "Starting ReAct run use_tools=%s message_length=%s memory_enabled=%s",
             self.use_tools,
@@ -112,6 +111,11 @@ class ReActAgent(Agent):
 
         try:
             for step_index in range(1, self.max_steps + 1):
+                effective_message = self.build_effective_message(
+                    message,
+                    memory_scope=memory_scope,
+                    tool_results=tuple(tool_results),
+                )
                 prompt = self._build_prompt(
                     message=effective_message,
                     scratchpad=scratchpad,
@@ -178,11 +182,6 @@ class ReActAgent(Agent):
                 )
                 tool_results.append(tool_result)
                 scratchpad.append(f"Action: {parsed_step.action}")
-                scratchpad.append(
-                    "Action Input: "
-                    f"{json.dumps(parsed_step.action_input, ensure_ascii=False)}"
-                )
-                scratchpad.append(f"Observation: {tool_result.content}")
         except Exception as exc:
             self.persist_memory_turn(
                 memory_scope=memory_scope,

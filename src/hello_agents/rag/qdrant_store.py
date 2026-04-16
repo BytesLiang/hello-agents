@@ -6,9 +6,32 @@ import hashlib
 import re
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
-from qdrant_client import QdrantClient, models  # type: ignore[import-not-found]
+try:
+    from qdrant_client import QdrantClient, models  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths.
+    QdrantClient = None  # type: ignore[assignment]
+
+    @dataclass(slots=True, frozen=True)
+    class _SparseVector:
+        """Provide the sparse-vector shape used by tests without Qdrant."""
+
+        indices: list[int]
+        values: list[float]
+
+    class _MissingQdrantModels:
+        """Raise a clear error for Qdrant-only symbols when deps are absent."""
+
+        SparseVector = _SparseVector
+
+        def __getattr__(self, name: str) -> Any:
+            raise ModuleNotFoundError(
+                "qdrant_client is required for Qdrant-backed RAG storage."
+            )
+
+    models = _MissingQdrantModels()
 
 from hello_agents.rag.config import RagConfig
 from hello_agents.rag.models import RagChunk
@@ -25,6 +48,10 @@ class RagQdrantStore:
 
         if not config.qdrant_url:
             raise ValueError("Qdrant requires QDRANT_URL for RAG.")
+        if QdrantClient is None:
+            raise ModuleNotFoundError(
+                "qdrant_client is required for Qdrant-backed RAG storage."
+            )
         self._config = config
         self._client = QdrantClient(
             url=config.qdrant_url,

@@ -98,7 +98,10 @@ def test_react_agent_executes_tool_and_finishes() -> None:
     assert result == "final answer"
     assert len(llm.calls) == 2
     second_prompt = llm.calls[1][1].content
-    assert "Observation: observed value" in second_prompt
+    assert "[TOOLS]" in second_prompt
+    assert "echo [success]: observed value" in second_prompt
+    assert "Observation: observed value" not in second_prompt
+    assert "Action Input:" not in second_prompt
 
 
 def test_react_agent_rejects_tool_use_when_disabled() -> None:
