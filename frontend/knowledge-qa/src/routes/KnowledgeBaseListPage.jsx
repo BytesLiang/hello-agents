@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { listKnowledgeBases, uploadKnowledgeBase } from "../api";
+import {
+  createKnowledgeBase,
+  listKnowledgeBases,
+  uploadKnowledgeBase,
+} from "../api";
+import { isTauriRuntime, pickDesktopDocuments } from "../runtime";
 
 const EMPTY_FORM = {
   name: "",
@@ -22,7 +27,9 @@ export function KnowledgeBaseListPage() {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
+  const [desktopMode] = useState(() => isTauriRuntime());
   const [selectedFiles, setSelectedFiles] = useState([]);
+  const [selectedPaths, setSelectedPaths] = useState([]);
   const [fileInputKey, setFileInputKey] = useState(0);
 
   useEffect(() => {
@@ -60,7 +67,12 @@ export function KnowledgeBaseListPage() {
       setSuccessMessage("");
       return;
     }
-    if (selectedFiles.length === 0) {
+    if (desktopMode && selectedPaths.length === 0) {
+      setError("Choose at least one local document path.");
+      setSuccessMessage("");
+      return;
+    }
+    if (!desktopMode && selectedFiles.length === 0) {
       setError("Choose at least one local document.");
       setSuccessMessage("");
       return;
@@ -70,15 +82,22 @@ export function KnowledgeBaseListPage() {
     setError("");
     setSuccessMessage("");
     try {
-      const created = await uploadKnowledgeBase({
-        name: form.name.trim(),
-        description: form.description.trim(),
-        files: selectedFiles,
-      });
+      const created = desktopMode
+        ? await createKnowledgeBase({
+            name: form.name.trim(),
+            description: form.description.trim(),
+            paths: selectedPaths,
+          })
+        : await uploadKnowledgeBase({
+            name: form.name.trim(),
+            description: form.description.trim(),
+            files: selectedFiles,
+          });
       const refreshed = await listKnowledgeBases();
       setKnowledgeBases(refreshed);
       setForm(EMPTY_FORM);
       setSelectedFiles([]);
+      setSelectedPaths([]);
       setFileInputKey((current) => current + 1);
       setSuccessMessage(`Imported ${created.name} successfully.`);
     } catch (submitError) {
@@ -88,14 +107,21 @@ export function KnowledgeBaseListPage() {
     }
   }
 
+  async function handleChooseDesktopDocuments() {
+    setError("");
+    const paths = await pickDesktopDocuments();
+    setSelectedPaths(paths);
+  }
+
   return (
     <main className="page-shell">
       <section className="hero-panel">
         <div className="eyebrow">Knowledge QA Console</div>
         <h1>Turn the MVP into an operator-friendly knowledge workspace.</h1>
         <p className="hero-copy">
-          Manage knowledge bases, upload local documents from your machine, and
-          move straight into evidence-backed QA once indexing completes.
+          {desktopMode
+            ? "Manage knowledge bases with native file selection and ingest documents directly from your machine."
+            : "Manage knowledge bases, upload local documents from your machine, and move straight into evidence-backed QA once indexing completes."}
         </p>
       </section>
 
@@ -140,32 +166,70 @@ export function KnowledgeBaseListPage() {
               />
             </label>
 
-            <label className="field">
-              <span>Local Documents</span>
-              <input
-                key={fileInputKey}
-                multiple
-                name="files"
-                type="file"
-                onChange={(event) =>
-                  setSelectedFiles(Array.from(event.target.files ?? []))
-                }
-              />
-            </label>
+            {desktopMode ? (
+              <>
+                <div className="field">
+                  <span>Local Documents</span>
+                  <button
+                    className="secondary-button"
+                    onClick={handleChooseDesktopDocuments}
+                    type="button"
+                  >
+                    Choose Documents
+                  </button>
+                </div>
 
-            {selectedFiles.length ? (
-              <div className="file-list" aria-label="Selected files">
-                {selectedFiles.map((file) => (
-                  <span className="file-chip" key={`${file.name}-${file.size}`}>
-                    {file.name}
-                  </span>
-                ))}
-              </div>
+                {selectedPaths.length ? (
+                  <div className="file-list" aria-label="Selected paths">
+                    {selectedPaths.map((path) => (
+                      <span className="file-chip" key={path}>
+                        {path}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="message muted-message compact-message">
+                    Choose one or more local files using the native desktop dialog.
+                  </p>
+                )}
+              </>
             ) : (
-              <p className="message muted-message compact-message">
-                Choose one or more local files to ingest.
-              </p>
+              <>
+                <label className="field">
+                  <span>Local Documents</span>
+                  <input
+                    key={fileInputKey}
+                    multiple
+                    name="files"
+                    type="file"
+                    onChange={(event) =>
+                      setSelectedFiles(Array.from(event.target.files ?? []))
+                    }
+                  />
+                </label>
+
+                {selectedFiles.length ? (
+                  <div className="file-list" aria-label="Selected files">
+                    {selectedFiles.map((file) => (
+                      <span className="file-chip" key={`${file.name}-${file.size}`}>
+                        {file.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="message muted-message compact-message">
+                    Choose one or more local files to ingest.
+                  </p>
+                )}
+              </>
             )}
+
+            {desktopMode ? (
+              <p className="message muted-message compact-message">
+                Desktop mode reads local file paths directly and expects the local
+                Python API to be running on `127.0.0.1:8000`.
+              </p>
+            ) : null}
 
             <button className="primary-button" disabled={submitting} type="submit">
               {submitting ? "Importing..." : "Create Knowledge Base"}

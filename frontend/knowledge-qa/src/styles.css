@@ -56,6 +56,37 @@ textarea {
   position: relative;
 }
 
+code {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+.desktop-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.desktop-panel {
+  width: min(640px, 100%);
+  padding: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.2)),
+    var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.desktop-panel h1 {
+  margin: 10px 0 14px;
+  max-width: 14ch;
+  font-size: clamp(2rem, 3vw, 3.4rem);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
 .page-shell {
   max-width: 1240px;
   margin: 0 auto;
@@ -186,6 +217,22 @@ textarea {
   cursor: pointer;
   transition: transform 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
   box-shadow: 0 18px 30px rgba(15, 118, 110, 0.24);
+}
+
+.secondary-button {
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: 999px;
+  padding: 12px 16px;
+  color: var(--accent-strong);
+  background: rgba(15, 118, 110, 0.08);
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.secondary-button:hover {
+  transform: translateY(-1px);
+  background: rgba(15, 118, 110, 0.12);
 }
 
 .primary-button:hover:not(:disabled) {

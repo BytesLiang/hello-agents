@@ -1,3 +1,5 @@
+import { resolveApiBaseUrl } from "./runtime";
+
 function buildErrorMessage(payload, fallback) {
   if (payload && typeof payload === "object" && "detail" in payload) {
     const { detail } = payload;
@@ -9,7 +11,7 @@ function buildErrorMessage(payload, fallback) {
 }
 
 async function requestJson(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(`${resolveApiBaseUrl()}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...(options.headers ?? {}),
@@ -54,10 +56,13 @@ export async function uploadKnowledgeBase({ name, description, files }) {
     formData.append("files", file);
   }
 
-  const response = await fetch("/api/knowledge-bases/upload", {
-    method: "POST",
-    body: formData,
-  });
+  const response = await fetch(
+    `${resolveApiBaseUrl()}/api/knowledge-bases/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
 
   const contentType = response.headers.get("content-type") ?? "";
   const payload = contentType.includes("application/json")

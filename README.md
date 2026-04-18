@@ -44,6 +44,17 @@ npm install
 npm run dev
 ```
 
+Desktop shell startup with Tauri:
+
+```bash
+cd frontend/knowledge-qa
+npm install
+npm run tauri:dev
+```
+
+The current desktop shell reuses the same React UI and now starts and stops the
+local Python API automatically on `http://127.0.0.1:8000` when needed.
+
 See [`docs/knowledge_qa.md`](/Users/liang/code/hello-agents/docs/knowledge_qa.md)
 for API routes, frontend workflow, and end-to-end setup.
 

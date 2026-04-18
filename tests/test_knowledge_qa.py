@@ -12,6 +12,7 @@ from hello_agents.apps.knowledge_qa import (
     KnowledgeQAConfig,
     KnowledgeQAService,
 )
+from hello_agents.apps.knowledge_qa.retrieve import KnowledgeRetriever
 from hello_agents.llm.types import LLMMessage, LLMResponse
 from hello_agents.rag.models import RagChunk
 
@@ -53,11 +54,13 @@ class StubRagRetriever:
         """Store the chunk list."""
 
         self._chunks = chunks
+        self.top_k_calls: list[int | None] = []
 
     def query(self, text: str, *, top_k: int | None = None) -> list[RagChunk]:
         """Return the first top-k chunks."""
 
         del text
+        self.top_k_calls.append(top_k)
         if top_k is None:
             return list(self._chunks)
         return list(self._chunks[:top_k])
@@ -212,6 +215,74 @@ def test_ask_rejects_when_no_chunks_are_found(tmp_path: Path) -> None:
     assert result.reason == "no_relevant_context"
     assert "do not know" in result.answer
     assert not llm.calls
+
+
+def test_retriever_deduplicates_and_prioritizes_named_file_chunks(
+    tmp_path: Path,
+) -> None:
+    """Verify file-specific questions prefer matching sources and drop duplicates."""
+
+    readme_path = tmp_path / "README.md"
+    overview_path = tmp_path / "01_overview.md"
+    retriever = StubRagRetriever(
+        [
+            RagChunk(
+                id="dup-1",
+                source=str(readme_path),
+                content="Section: Files\n\n- `01_overview.md`: product scope and goals",
+                score=1.0,
+                metadata={"heading_path": "Files"},
+            ),
+            RagChunk(
+                id="dup-2",
+                source=str(readme_path),
+                content="Section: Files\n\n- `01_overview.md`: product scope and goals",
+                score=0.9,
+                metadata={"heading_path": "Files"},
+            ),
+            RagChunk(
+                id="overview-1",
+                source=str(overview_path),
+                content=(
+                    "Section: Product Summary\n\n"
+                    "Atlas Assistant is an internal QA product."
+                ),
+                score=0.3,
+                metadata={"heading_path": "Product Summary"},
+            ),
+            RagChunk(
+                id="overview-2",
+                source=str(overview_path),
+                content="Section: Goals\n\n- Provide grounded answers with citations.",
+                score=0.2,
+                metadata={"heading_path": "Goals"},
+            ),
+            RagChunk(
+                id="overview-3",
+                source=str(overview_path),
+                content=(
+                    "Section: Non-Goals\n\n"
+                    "- Atlas Assistant does not browse the public internet."
+                ),
+                score=0.1,
+                metadata={"heading_path": "Non-Goals"},
+            ),
+        ]
+    )
+    knowledge_retriever = KnowledgeRetriever(retriever, top_k=4)
+
+    result = knowledge_retriever.retrieve("01_overview.md 分几段")
+
+    assert retriever.top_k_calls == [12]
+    assert [Path(chunk.source).name for chunk in result.chunks[:3]] == [
+        "01_overview.md",
+        "01_overview.md",
+        "01_overview.md",
+    ]
+    assert len(result.chunks) == 4
+    assert (
+        sum(1 for chunk in result.chunks if Path(chunk.source).name == "README.md") == 1
+    )
 
 
 def test_ask_raises_for_unknown_knowledge_base(tmp_path: Path) -> None:

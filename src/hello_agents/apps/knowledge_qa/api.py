@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import argparse
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, TypeVar
 
 from dotenv import load_dotenv  # type: ignore[import-not-found]
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from hello_agents.apps.knowledge_qa.api_schemas import (
     AnswerResultResponse,
@@ -33,6 +36,13 @@ def create_app(runtime: KnowledgeQARuntime | None = None) -> FastAPI:
         version="0.1.0",
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins(),
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @app.get("/api/health", response_model=HealthResponse)
@@ -189,17 +199,18 @@ def create_app(runtime: KnowledgeQARuntime | None = None) -> FastAPI:
     return app
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     """Run the knowledge QA API with a local uvicorn server."""
 
     import uvicorn
 
     load_dotenv()
+    args = _parse_args(argv)
     uvicorn.run(
         "hello_agents.apps.knowledge_qa.api:create_app",
         factory=True,
-        host="127.0.0.1",
-        port=8000,
+        host=args.host,
+        port=args.port,
     )
 
 
@@ -237,6 +248,37 @@ def _normalize_name(raw_name: str) -> str:
             detail="Knowledge base name must not be empty.",
         )
     return normalized
+
+
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    """Parse the local server startup arguments."""
+
+    parser = argparse.ArgumentParser(
+        prog="python -m hello_agents.apps.knowledge_qa.api",
+    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    return parser.parse_args(argv)
+
+
+def _cors_origins() -> list[str]:
+    """Return the allowed frontend origins for local web and desktop clients."""
+
+    configured = [
+        origin.strip()
+        for origin in os.getenv("KNOWLEDGE_QA_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    if configured:
+        return configured
+
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+    ]
 
 
 if __name__ == "__main__":

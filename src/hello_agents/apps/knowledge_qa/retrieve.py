@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,8 @@ class RetrievalResult:
 class KnowledgeRetriever:
     """Normalize and optionally filter RAG retrieval results."""
 
+    _FILENAME_PATTERN = re.compile(r"[\w.-]+\.[A-Za-z][A-Za-z0-9]{0,15}")
+
     def __init__(
         self,
         retriever: SupportsRagQuery,
@@ -66,13 +69,24 @@ class KnowledgeRetriever:
     ) -> RetrievalResult:
         """Retrieve normalized chunks for one question."""
 
-        query = self._query_rewriter.rewrite(question.strip())
+        normalized_question = question.strip()
+        query = self._query_rewriter.rewrite(normalized_question)
         if not query:
             return RetrievalResult(query="", chunks=())
 
+        referenced_filenames = _extract_referenced_filenames(
+            normalized_question,
+            rewritten_query=query,
+        )
         chunks = [
             _normalize_chunk(chunk)
-            for chunk in self._retriever.query(query, top_k=self._top_k)
+            for chunk in self._retriever.query(
+                query,
+                top_k=_expanded_top_k(
+                    self._top_k,
+                    has_filename_hint=bool(referenced_filenames),
+                ),
+            )
         ]
         if source_paths:
             chunks = [
@@ -80,7 +94,12 @@ class KnowledgeRetriever:
                 for chunk in chunks
                 if _matches_any_source(chunk.source, source_paths)
             ]
-        return RetrievalResult(query=query, chunks=tuple(chunks))
+        deduplicated_chunks = _deduplicate_chunks(chunks)
+        ranked_chunks = _prioritize_referenced_sources(
+            deduplicated_chunks,
+            referenced_filenames=referenced_filenames,
+        )
+        return RetrievalResult(query=query, chunks=tuple(ranked_chunks[: self._top_k]))
 
 
 def _normalize_chunk(chunk: RagChunk) -> RetrievedChunk:
@@ -119,3 +138,75 @@ def _path_matches(source: str, base: str) -> bool:
         )
     except OSError:
         return source.startswith(base)
+
+
+def _extract_referenced_filenames(
+    question: str,
+    *,
+    rewritten_query: str,
+) -> tuple[str, ...]:
+    """Return normalized filenames explicitly mentioned in the question."""
+
+    candidates = f"{question}\n{rewritten_query}"
+    filenames: list[str] = []
+    seen: set[str] = set()
+    for match in KnowledgeRetriever._FILENAME_PATTERN.findall(candidates):
+        normalized = Path(match).name.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        filenames.append(normalized)
+    return tuple(filenames)
+
+
+def _expanded_top_k(top_k: int, *, has_filename_hint: bool) -> int:
+    """Fetch a wider candidate pool when the question names a source file."""
+
+    if not has_filename_hint:
+        return top_k
+    return max(top_k * 3, top_k + 6)
+
+
+def _deduplicate_chunks(chunks: Sequence[RetrievedChunk]) -> list[RetrievedChunk]:
+    """Drop exact duplicate retrieval hits while preserving first occurrence."""
+
+    unique_chunks: list[RetrievedChunk] = []
+    seen: set[tuple[str, str, str]] = set()
+    for chunk in chunks:
+        key = (
+            chunk.source,
+            chunk.heading_path,
+            " ".join(chunk.content.split()),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_chunks.append(chunk)
+    return unique_chunks
+
+
+def _prioritize_referenced_sources(
+    chunks: Sequence[RetrievedChunk],
+    *,
+    referenced_filenames: Sequence[str],
+) -> list[RetrievedChunk]:
+    """Prefer chunks from explicitly named files before other retrieval hits."""
+
+    if not referenced_filenames:
+        return list(chunks)
+
+    prioritized = sorted(
+        enumerate(chunks),
+        key=lambda item: (_source_match_rank(item[1], referenced_filenames), item[0]),
+    )
+    return [chunk for _, chunk in prioritized]
+
+
+def _source_match_rank(
+    chunk: RetrievedChunk,
+    referenced_filenames: Sequence[str],
+) -> int:
+    """Return a sort rank for how directly a chunk source matches the query."""
+
+    source_name = Path(chunk.source).name.lower()
+    return 0 if source_name in referenced_filenames else 1

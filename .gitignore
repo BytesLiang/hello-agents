@@ -33,4 +33,5 @@ docs/_build/
 frontend/**/dist/
 frontend/**/coverage/
 *.tsbuildinfo
+src-tauri/target/
 *.log

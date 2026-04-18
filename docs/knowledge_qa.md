@@ -22,6 +22,7 @@
 - 正式 CLI 命令入口
 - FastAPI HTTP API
 - React + Vite Web 管理台
+- Tauri 本地桌面壳
 - 运行 trace 落盘到本地 JSONL
 - 知识库元数据落盘到本地 JSON
 
@@ -33,6 +34,7 @@
 - 浏览器目录上传
 - 异步导入任务与进度轮询
 - 离线评测 runner
+- Tauri 自动拉起本地 Python API
 
 ## 目录结构
 
@@ -55,6 +57,7 @@ src/hello_agents/apps/knowledge_qa/
 └── trace.py
 
 frontend/knowledge-qa/
+frontend/knowledge-qa/src-tauri/
 examples/knowledge_qa_cli.py
 config/knowledge_qa.example.env
 tests/test_knowledge_qa.py
@@ -91,11 +94,13 @@ EMBED_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 - `KNOWLEDGE_QA_ANSWER_MAX_TOKENS`
 - `KNOWLEDGE_QA_STORE_PATH`
 - `KNOWLEDGE_QA_TRACE_PATH`
+- `KNOWLEDGE_QA_CORS_ORIGINS`
 
 默认情况下：
 
 - 知识库元数据写入 `.hello_agents/knowledge_bases.json`
 - 运行 trace 写入 `.hello_agents/knowledge_qa_traces.jsonl`
+- 本地 Web / Tauri 前端允许从 `localhost:5173` 和 `tauri.localhost` 访问 API
 
 ## 运行后端 API
 
@@ -261,6 +266,49 @@ npm run dev
 - Web 端当前支持“本地文件上传”
 - CLI 仍然支持“服务器本地路径”
 - 上传文件会先落到 `.hello_agents/uploads/` 再复用现有 ingest 流程
+
+## Tauri 桌面端
+
+Tauri 桌面壳位于 `frontend/knowledge-qa/src-tauri/`，继续复用同一套 React
+前端。和浏览器模式不同，桌面模式优先使用原生文件选择器返回本地路径，再调本机
+FastAPI 接口完成导入。
+
+### 启动方式
+
+```bash
+cd frontend/knowledge-qa
+npm install
+npm run tauri:dev
+```
+
+默认情况下，桌面壳会自动探测 `http://127.0.0.1:8000`。如果本地 API 尚未启动，
+它会尝试自动拉起：
+
+```bash
+python3 -m hello_agents.apps.knowledge_qa.api --host 127.0.0.1 --port 8000
+```
+
+### 当前行为
+
+- 浏览器模式：上传本地文件到 `/api/knowledge-bases/upload`
+- Tauri 模式：先自动探测或拉起本地 Python API，再选择本地文件路径并调用 `POST /api/knowledge-bases`
+- CLI 模式：继续直接传入 `--paths`
+
+### 桌面端环境变量
+
+如果桌面壳无法自动找到你的 Python 环境，可以显式指定：
+
+- `KNOWLEDGE_QA_DESKTOP_PYTHON`
+  - 例如：`/Users/liang/code/hello-agents/.venv/bin/python`
+- `KNOWLEDGE_QA_DESKTOP_PROJECT_ROOT`
+  - 指向仓库根目录，桌面端会在这里设置工作目录并补 `PYTHONPATH=src`
+
+### 当前限制
+
+- 需要本机安装 Rust toolchain 和 Tauri CLI 依赖
+- 当前默认读取 `http://127.0.0.1:8000`
+- 当前自动拉起逻辑面向本地开发和自托管场景，打包分发仍需要单独设计 Python 运行时
+- 目录选择、后台进程管理、应用内升级暂未实现
 
 ## `KnowledgeQAService` 接口
 
