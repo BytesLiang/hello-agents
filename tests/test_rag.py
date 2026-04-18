@@ -7,10 +7,16 @@ from pathlib import Path
 
 from hello_agents.agent import Agent
 from hello_agents.llm.client import LLMClient
+from hello_agents.rag import qdrant_store as qdrant_store_module
 from hello_agents.rag.config import RagConfig
 from hello_agents.rag.indexer import RagIndexer
 from hello_agents.rag.models import RagChunk
-from hello_agents.rag.qdrant_store import _text_to_sparse_vector
+from hello_agents.rag.qdrant_store import (
+    RagQdrantStore,
+    _collection_schema_mismatch_reason,
+    _iter_batches,
+    _text_to_sparse_vector,
+)
 from hello_agents.rag.retriever import RagRetriever
 from hello_agents.tools.rag import RagSearchTool
 
@@ -177,3 +183,181 @@ def test_sparse_vector_generation_is_stable() -> None:
     assert first.indices
     assert first.indices == second.indices
     assert first.values == second.values
+
+
+def test_collection_schema_mismatch_reason_detects_legacy_collection() -> None:
+    """Verify legacy unnamed-vector collections are treated as incompatible."""
+
+    info = {
+        "config": {
+            "params": {
+                "vectors": {"size": 3, "distance": "Cosine"},
+                "sparse_vectors": {},
+            }
+        },
+        "points_count": 2,
+    }
+
+    reason = _collection_schema_mismatch_reason(
+        info,
+        dense_vector_name="dense",
+        sparse_vector_name="sparse",
+        vector_size=3,
+    )
+
+    assert reason == "missing dense vector 'dense'"
+
+
+def test_ensure_collection_raises_for_incompatible_nonempty_collection() -> None:
+    """Verify incompatible collections fail with a clear error by default."""
+
+    class StubClient:
+        """Provide minimal collection APIs used by the store."""
+
+        def collection_exists(self, name: str) -> bool:
+            del name
+            return True
+
+        def get_collection(self, name: str) -> dict[str, object]:
+            del name
+            return {
+                "config": {
+                    "params": {
+                        "vectors": {"size": 3, "distance": "Cosine"},
+                        "sparse_vectors": {},
+                    }
+                },
+                "points_count": 4,
+            }
+
+    store = RagQdrantStore.__new__(RagQdrantStore)
+    store._config = RagConfig(  # type: ignore[attr-defined]
+        enabled=True,
+        qdrant_url="http://localhost:6333",
+        recreate_collection_on_schema_mismatch=False,
+        embed=None,
+    )
+    store._client = StubClient()  # type: ignore[attr-defined]
+    store._vector_size = None  # type: ignore[attr-defined]
+
+    try:
+        store._ensure_collection(vector_size=3)  # type: ignore[attr-defined]
+    except RuntimeError as exc:
+        assert "RAG_RECREATE_COLLECTION_ON_SCHEMA_MISMATCH=true" in str(exc)
+    else:
+        raise AssertionError("Expected an incompatible collection error.")
+
+
+def test_ensure_collection_recreates_empty_incompatible_collection() -> None:
+    """Verify empty incompatible collections are recreated automatically."""
+
+    events: list[str] = []
+
+    class StubClient:
+        """Provide minimal collection APIs used by the store."""
+
+        def collection_exists(self, name: str) -> bool:
+            del name
+            return True
+
+        def get_collection(self, name: str) -> dict[str, object]:
+            del name
+            return {
+                "config": {
+                    "params": {
+                        "vectors": {"size": 3, "distance": "Cosine"},
+                        "sparse_vectors": {},
+                    }
+                },
+                "points_count": 0,
+            }
+
+        def delete_collection(self, name: str) -> None:
+            events.append(f"delete:{name}")
+
+    store = RagQdrantStore.__new__(RagQdrantStore)
+    store._config = RagConfig(  # type: ignore[attr-defined]
+        enabled=True,
+        qdrant_url="http://localhost:6333",
+        collection="hello_agents_rag",
+        recreate_collection_on_schema_mismatch=False,
+        embed=None,
+    )
+    store._client = StubClient()  # type: ignore[attr-defined]
+    store._vector_size = None  # type: ignore[attr-defined]
+    store._create_collection = (  # type: ignore[attr-defined]
+        lambda *, vector_size: events.append(f"create:{vector_size}")
+    )
+
+    store._ensure_collection(vector_size=3)  # type: ignore[attr-defined]
+
+    assert events == ["delete:hello_agents_rag", "create:3"]
+
+
+def test_iter_batches_splits_chunks_and_embeddings_consistently() -> None:
+    """Verify upsert batching preserves chunk-embedding alignment."""
+
+    chunks = [
+        RagChunk(id="1", source="a.md", content="A"),
+        RagChunk(id="2", source="b.md", content="B"),
+        RagChunk(id="3", source="c.md", content="C"),
+    ]
+    embeddings = [[0.1], [0.2], [0.3]]
+
+    batches = _iter_batches(chunks, embeddings, batch_size=2)
+
+    assert len(batches) == 2
+    assert [chunk.id for chunk in batches[0][0]] == ["1", "2"]
+    assert batches[0][1] == [[0.1], [0.2]]
+    assert [chunk.id for chunk in batches[1][0]] == ["3"]
+    assert batches[1][1] == [[0.3]]
+
+
+def test_upsert_uses_configured_batch_size() -> None:
+    """Verify Qdrant upsert sends multiple requests when batching is enabled."""
+
+    calls: list[int] = []
+
+    original_point_struct = qdrant_store_module.models.__dict__.get("PointStruct")
+    qdrant_store_module.models.PointStruct = lambda **kwargs: kwargs  # type: ignore[attr-defined]
+
+    class StubClient:
+        """Record upsert batch sizes."""
+
+        def upsert(
+            self,
+            *,
+            collection_name: str,
+            points: Sequence[object],
+            wait: bool,
+            timeout: int,
+        ) -> None:
+            del collection_name, wait, timeout
+            calls.append(len(points))
+
+    store = RagQdrantStore.__new__(RagQdrantStore)
+    store._config = RagConfig(  # type: ignore[attr-defined]
+        enabled=True,
+        qdrant_url="http://localhost:6333",
+        qdrant_upsert_batch_size=2,
+        embed=None,
+    )
+    store._client = StubClient()  # type: ignore[attr-defined]
+    store._vector_size = 3  # type: ignore[attr-defined]
+
+    chunks = [
+        RagChunk(id="1", source="a.md", content="A"),
+        RagChunk(id="2", source="b.md", content="B"),
+        RagChunk(id="3", source="c.md", content="C"),
+    ]
+    embeddings = [[0.1, 0.0, 0.0], [0.2, 0.0, 0.0], [0.3, 0.0, 0.0]]
+
+    try:
+        store.upsert(chunks, embeddings)
+    finally:
+        if original_point_struct is None:
+            delattr(qdrant_store_module.models, "PointStruct")
+        else:
+            qdrant_store_module.models.PointStruct = original_point_struct  # type: ignore[attr-defined]
+
+    assert calls == [2, 1]

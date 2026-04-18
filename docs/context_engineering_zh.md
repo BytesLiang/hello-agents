@@ -27,16 +27,21 @@
 
 `context` 包当前导出：
 
+- `ApproximateTokenEstimator`
 - `ContextConfig`
+- `ContextDebugInfo`
 - `ContextRequest`
 - `ContextSection`
+- `ContextSectionTrace`
 - `ContextEngine`
+- `TokenEstimator`
 
 在运行时，`ContextEngine.compose(request)` 会返回一个
 `ContextEnvelope`，其中包含：
 
 - 经过筛选后的结构化 section
 - 最终渲染好的用户消息
+- 一份用于调试预算与选择结果的 metadata
 
 ## 上下文组装
 
@@ -73,17 +78,32 @@
 - 是否启用各类来源
 - section 的渲染顺序
 - 总上下文字符数上限
+- 总上下文 token 上限
 - 单个 section 的字符数上限
+- 单个 section 的 token 上限
 - 每个 section 的最大条目数
 - 单条上下文的最大字符数
+- 单条上下文的最大 token 数
 - 可保留的最近工具结果数量
 
-预算裁剪分两步进行：
+这层同时支持可替换的 token estimator：
+
+- 默认实现是 `ApproximateTokenEstimator`
+- 调用方也可以向 `ContextEngine` 注入自定义 `TokenEstimator`
+
+预算裁剪现在分两步进行：
 
 1. 每个来源先独立构建 section
-2. 再按 section 和总字符预算做裁剪或省略
+2. 再按 token 和字符预算做裁剪或省略
 
 空 section 永远不会被渲染出来。
+
+`ContextEnvelope.debug` 会暴露：
+
+- 是否启用了 token / char 预算
+- 最终选中上下文的 token / char 估算
+- 最终渲染消息的 token / char 估算
+- 每个 section 是否被选中，以及被裁剪或丢弃的原因
 
 ## Agent 集成
 

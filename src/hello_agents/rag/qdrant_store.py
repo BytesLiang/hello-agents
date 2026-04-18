@@ -72,26 +72,48 @@ class RagQdrantStore:
         if self._vector_size is None and embeddings:
             self._ensure_collection(vector_size=len(embeddings[0]))
 
-        points = [
-            models.PointStruct(
-                id=chunk.id,
-                vector={
-                    self._DENSE_VECTOR_NAME: list(embedding),
-                    self._SPARSE_VECTOR_NAME: _text_to_sparse_vector(chunk.content),
-                },
-                payload={
-                    "source": chunk.source,
-                    "content": chunk.content,
-                    "metadata": chunk.metadata,
-                },
-            )
-            for chunk, embedding in zip(chunks, embeddings, strict=True)
-        ]
-        self._client.upsert(
-            collection_name=self._config.collection,
-            points=points,
-            wait=True,
-        )
+        for chunk_batch, embedding_batch in _iter_batches(
+            chunks,
+            embeddings,
+            batch_size=self._config.qdrant_upsert_batch_size,
+        ):
+            points = [
+                models.PointStruct(
+                    id=chunk.id,
+                    vector={
+                        self._DENSE_VECTOR_NAME: list(embedding),
+                        self._SPARSE_VECTOR_NAME: _text_to_sparse_vector(
+                            chunk.content
+                        ),
+                    },
+                    payload={
+                        "source": chunk.source,
+                        "content": chunk.content,
+                        "metadata": chunk.metadata,
+                    },
+                )
+                for chunk, embedding in zip(
+                    chunk_batch,
+                    embedding_batch,
+                    strict=True,
+                )
+            ]
+            try:
+                self._client.upsert(
+                    collection_name=self._config.collection,
+                    points=points,
+                    wait=self._config.qdrant_wait_for_upsert,
+                    timeout=int(self._config.qdrant_timeout),
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    "Qdrant upsert failed. Consider lowering "
+                    "QDRANT_UPSERT_BATCH_SIZE or increasing QDRANT_TIMEOUT. "
+                    f"collection='{self._config.collection}', "
+                    f"batch_size={len(points)}, "
+                    f"wait={self._config.qdrant_wait_for_upsert}, "
+                    f"timeout={self._config.qdrant_timeout}"
+                ) from exc
 
     def search(self, embedding: Sequence[float], *, top_k: int) -> list[RagChunk]:
         """Search for the top-k closest chunks."""
@@ -152,7 +174,38 @@ class RagQdrantStore:
 
         self._vector_size = vector_size
         if self._client.collection_exists(self._config.collection):
-            return
+            collection_info = self._client.get_collection(self._config.collection)
+            mismatch_reason = _collection_schema_mismatch_reason(
+                collection_info,
+                dense_vector_name=self._DENSE_VECTOR_NAME,
+                sparse_vector_name=self._SPARSE_VECTOR_NAME,
+                vector_size=vector_size,
+            )
+            if mismatch_reason is None:
+                return
+            points_count = _collection_points_count(collection_info)
+            if (
+                points_count == 0
+                or self._config.recreate_collection_on_schema_mismatch
+            ):
+                self._client.delete_collection(self._config.collection)
+                self._create_collection(vector_size=vector_size)
+                return
+            raise RuntimeError(
+                "Existing Qdrant collection schema is incompatible with the "
+                "current RAG setup. "
+                f"Collection='{self._config.collection}', "
+                f"reason='{mismatch_reason}', "
+                f"points_count={points_count}. "
+                "Delete the collection manually or set "
+                "RAG_RECREATE_COLLECTION_ON_SCHEMA_MISMATCH=true to recreate it."
+            )
+        self._create_collection(vector_size=vector_size)
+
+    def _create_collection(self, *, vector_size: int) -> None:
+        """Create the Qdrant collection with the expected hybrid schema."""
+
+        self._vector_size = vector_size
         self._client.create_collection(
             collection_name=self._config.collection,
             vectors_config={
@@ -168,6 +221,99 @@ class RagQdrantStore:
             },
             timeout=int(self._config.qdrant_timeout),
         )
+
+
+def _collection_schema_mismatch_reason(
+    collection_info: Any,
+    *,
+    dense_vector_name: str,
+    sparse_vector_name: str,
+    vector_size: int,
+) -> str | None:
+    """Return the schema mismatch reason for an existing collection."""
+
+    params = _collection_params(collection_info)
+    vectors = _get_config_value(params, "vectors")
+    sparse_vectors = _get_config_value(params, "sparse_vectors")
+
+    if not isinstance(vectors, dict):
+        return "collection uses unnamed dense vectors"
+    dense_config = vectors.get(dense_vector_name)
+    if dense_config is None:
+        return f"missing dense vector '{dense_vector_name}'"
+
+    existing_vector_size = _as_int(_get_config_value(dense_config, "size"))
+    if existing_vector_size != vector_size:
+        return (
+            f"dense vector '{dense_vector_name}' has size {existing_vector_size}, "
+            f"expected {vector_size}"
+        )
+
+    if not isinstance(sparse_vectors, dict):
+        return "collection is missing sparse vector configuration"
+    if sparse_vector_name not in sparse_vectors:
+        return f"missing sparse vector '{sparse_vector_name}'"
+    return None
+
+
+def _collection_points_count(collection_info: Any) -> int:
+    """Return the current point count for an existing collection."""
+
+    return _as_int(_get_config_value(collection_info, "points_count"))
+
+
+def _collection_params(collection_info: Any) -> Any:
+    """Return collection params from a Qdrant collection info payload."""
+
+    result = _get_config_value(collection_info, "result")
+    if result is not None:
+        collection_info = result
+    config = _get_config_value(collection_info, "config")
+    params = _get_config_value(config, "params")
+    return params
+
+
+def _get_config_value(payload: Any, key: str) -> Any:
+    """Read a key from either a dict-like payload or an attribute-bearing object."""
+
+    if payload is None:
+        return None
+    if isinstance(payload, dict):
+        return payload.get(key)
+    return getattr(payload, key, None)
+
+
+def _as_int(value: Any) -> int:
+    """Convert a collection-info value to an integer when possible."""
+
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        return int(value)
+    return 0
+
+
+def _iter_batches(
+    chunks: Sequence[RagChunk],
+    embeddings: Sequence[Sequence[float]],
+    *,
+    batch_size: int,
+) -> list[tuple[Sequence[RagChunk], Sequence[Sequence[float]]]]:
+    """Split chunks and embeddings into aligned batches."""
+
+    if batch_size <= 0:
+        batch_size = len(chunks) if chunks else 1
+    return [
+        (
+            chunks[start : start + batch_size],
+            embeddings[start : start + batch_size],
+        )
+        for start in range(0, len(chunks), batch_size)
+    ]
 
 
 def _scored_point_to_chunk(point: Any) -> RagChunk:

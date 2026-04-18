@@ -27,16 +27,21 @@ The rendered prompt remains compatible with the existing LLM client:
 
 The context package exports:
 
+- `ApproximateTokenEstimator`
 - `ContextConfig`
+- `ContextDebugInfo`
 - `ContextRequest`
 - `ContextSection`
+- `ContextSectionTrace`
 - `ContextEngine`
+- `TokenEstimator`
 
 Operationally, `ContextEngine.compose(request)` returns a `ContextEnvelope`
 containing:
 
 - the selected structured sections
 - the final rendered user message
+- debug metadata describing budgets, selected sections, and drop reasons
 
 ## Source Assembly
 
@@ -73,17 +78,32 @@ The first version uses lightweight budgeting rather than exact token counting.
 - enabled sources
 - source render order
 - max total context characters
+- max total context tokens
 - max section characters
+- max section tokens
 - max items per section
 - max item characters
+- max item tokens
 - max remembered tool results
 
-Budgeting happens in two stages:
+The engine also supports a replaceable token estimator:
+
+- `ApproximateTokenEstimator` is the default
+- callers may inject a custom `TokenEstimator` into `ContextEngine`
+
+Budgeting now happens in two stages:
 
 1. build sections independently per source
-2. trim or omit sections to satisfy section and total character budgets
+2. trim or omit sections to satisfy token and character budgets
 
 Empty sections are never rendered.
+
+`ContextEnvelope.debug` exposes:
+
+- whether token and character budgets were applied
+- estimated tokens and characters for the selected context
+- estimated tokens and characters for the rendered message
+- per-section traces with selection status and drop reasons
 
 ## Agent Integration
 

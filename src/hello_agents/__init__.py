@@ -2,10 +2,14 @@
 
 from hello_agents.chat_agent import ChatAgent
 from hello_agents.context import (
+    ApproximateTokenEstimator,
     ContextConfig,
+    ContextDebugInfo,
     ContextEngine,
     ContextRequest,
     ContextSection,
+    ContextSectionTrace,
+    TokenEstimator,
 )
 from hello_agents.memory import (
     EmbedConfig,
@@ -31,10 +35,13 @@ from hello_agents.tools.rag import RagSearchTool
 
 __all__ = [
     "ChatAgent",
+    "ApproximateTokenEstimator",
     "ContextConfig",
+    "ContextDebugInfo",
     "ContextEngine",
     "ContextRequest",
     "ContextSection",
+    "ContextSectionTrace",
     "EmbedConfig",
     "LayeredMemory",
     "Memory",
@@ -53,6 +60,7 @@ __all__ = [
     "ToolRegistry",
     "ToolResult",
     "ToolSchema",
+    "TokenEstimator",
     "build_default_tool_registry",
     "__version__",
 ]

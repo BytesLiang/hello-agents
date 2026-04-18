@@ -66,6 +66,15 @@ class StubRagRetriever:
         ]
 
 
+class CountingTokenEstimator:
+    """Treat every non-space character as one estimated token."""
+
+    def estimate(self, text: str) -> int:
+        """Return a deterministic token estimate for tests."""
+
+        return sum(1 for character in text if not character.isspace())
+
+
 def test_context_engine_renders_single_enabled_source() -> None:
     """Verify one enabled source produces one prompt block."""
 
@@ -158,3 +167,86 @@ def test_context_engine_returns_raw_message_without_context() -> None:
 
     assert envelope.sections == ()
     assert envelope.rendered_message == "Just answer directly."
+
+
+def test_context_engine_applies_token_budgets_and_reports_dropped_sections() -> None:
+    """Verify token budgets can drop sections and expose trace metadata."""
+
+    engine = ContextEngine(
+        rag=StubRagRetriever(),
+        token_estimator=CountingTokenEstimator(),
+        config=ContextConfig(
+            enable_memory=False,
+            enable_tools=True,
+            max_total_chars=1_000,
+            max_section_chars=1_000,
+            max_item_chars=1_000,
+            max_total_tokens=60,
+            max_section_tokens=1_000,
+            max_item_tokens=1_000,
+            max_tool_results=1,
+        ),
+    )
+
+    envelope = engine.compose(
+        ContextRequest(
+            message="Summarize Atlas.",
+            tool_results=(
+                ToolResult(
+                    tool_name="search",
+                    content=(
+                        "This observation should be dropped by the total token budget."
+                    ),
+                ),
+            ),
+        )
+    )
+
+    trace_by_name = {trace.name: trace for trace in envelope.debug.section_traces}
+
+    assert [section.name for section in envelope.sections] == ["rag"]
+    assert envelope.debug.token_budget_applied is True
+    assert trace_by_name["rag"].selected is True
+    assert trace_by_name["tools"].selected is False
+    assert "max_total_tokens" in trace_by_name["tools"].dropped_reasons
+
+
+def test_context_engine_tracks_item_token_truncation_in_debug_metadata() -> None:
+    """Verify item-level token limits truncate content and emit debug traces."""
+
+    engine = ContextEngine(
+        token_estimator=CountingTokenEstimator(),
+        config=ContextConfig(
+            enable_rag=False,
+            enable_memory=False,
+            enable_tools=True,
+            max_total_chars=1_000,
+            max_section_chars=1_000,
+            max_item_chars=1_000,
+            max_total_tokens=1_000,
+            max_section_tokens=1_000,
+            max_item_tokens=20,
+            max_tool_results=1,
+        ),
+    )
+
+    envelope = engine.compose(
+        ContextRequest(
+            message="Summarize.",
+            tool_results=(
+                ToolResult(
+                    tool_name="search",
+                    content="alpha beta gamma delta epsilon zeta eta theta",
+                ),
+            ),
+        )
+    )
+
+    assert "[TOOLS]" in envelope.rendered_message
+    assert "..." in envelope.rendered_message
+    assert envelope.sections[0].estimated_tokens > 0
+    assert envelope.debug.context_tokens == sum(
+        section.estimated_tokens for section in envelope.sections
+    )
+    assert envelope.debug.rendered_message_tokens >= envelope.debug.context_tokens
+    assert "max_item_tokens" in envelope.debug.section_traces[0].dropped_reasons

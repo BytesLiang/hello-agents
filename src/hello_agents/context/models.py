@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import Literal, Protocol, runtime_checkable
 
 from hello_agents.memory import MemoryScope
 from hello_agents.tools.base import ToolResult
@@ -11,9 +11,17 @@ from hello_agents.tools.base import ToolResult
 ContextSectionName = Literal["rag", "memory", "tools"]
 
 
+@runtime_checkable
+class TokenEstimator(Protocol):
+    """Estimate token usage for prompt content."""
+
+    def estimate(self, text: str) -> int:
+        """Return the estimated token count for a text payload."""
+
+
 @dataclass(slots=True, frozen=True)
 class ContextConfig:
-    """Configure context sources, ordering, and lightweight budgets."""
+    """Configure context sources, ordering, and prompt budgets."""
 
     enable_rag: bool = True
     enable_memory: bool = True
@@ -24,6 +32,9 @@ class ContextConfig:
     max_items_per_section: int = 5
     max_item_chars: int = 320
     max_tool_results: int = 3
+    max_total_tokens: int | None = None
+    max_section_tokens: int | None = None
+    max_item_tokens: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -42,6 +53,33 @@ class ContextSection:
     name: ContextSectionName
     items: tuple[str, ...]
     rendered: str
+    estimated_tokens: int = 0
+
+
+@dataclass(slots=True, frozen=True)
+class ContextSectionTrace:
+    """Capture budgeting decisions for one context section."""
+
+    name: ContextSectionName
+    selected: bool
+    original_item_count: int
+    final_item_count: int
+    estimated_tokens: int = 0
+    estimated_chars: int = 0
+    dropped_reasons: tuple[str, ...] = ()
+
+
+@dataclass(slots=True, frozen=True)
+class ContextDebugInfo:
+    """Expose lightweight budgeting and rendering diagnostics."""
+
+    char_budget_applied: bool = False
+    token_budget_applied: bool = False
+    context_chars: int = 0
+    context_tokens: int = 0
+    rendered_message_chars: int = 0
+    rendered_message_tokens: int = 0
+    section_traces: tuple[ContextSectionTrace, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -50,3 +88,4 @@ class ContextEnvelope:
 
     sections: tuple[ContextSection, ...]
     rendered_message: str
+    debug: ContextDebugInfo = field(default_factory=ContextDebugInfo)
