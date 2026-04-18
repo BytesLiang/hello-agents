@@ -5,10 +5,22 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from hello_agents.memory.base import VectorStore
+from hello_agents.memory.config import QdrantStoreConfig
+from hello_agents.memory.models import (
+    MemoryKind,
+    MemoryScope,
+    VectorDocument,
+    VectorSearchHit,
+)
+
 try:
-    from qdrant_client import QdrantClient, models  # type: ignore[import-not-found]
+    from qdrant_client import (  # type: ignore[import-not-found]
+        QdrantClient as _qdrant_client_cls,
+    )
+    from qdrant_client import models as _qdrant_models  # type: ignore[import-not-found]
 except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths.
-    QdrantClient = None  # type: ignore[assignment]
+    _qdrant_client_cls = None  # type: ignore[assignment,misc]
 
     class _MissingQdrantModels:
         """Raise a clear error when Qdrant-only symbols are used without deps."""
@@ -18,16 +30,10 @@ except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths
                 "qdrant_client is required for Qdrant-backed memory storage."
             )
 
-    models = _MissingQdrantModels()
+    _qdrant_models = _MissingQdrantModels()  # type: ignore[assignment]
 
-from hello_agents.memory.base import VectorStore
-from hello_agents.memory.config import QdrantStoreConfig
-from hello_agents.memory.models import (
-    MemoryKind,
-    MemoryScope,
-    VectorDocument,
-    VectorSearchHit,
-)
+QdrantClient: Any = _qdrant_client_cls
+models: Any = _qdrant_models
 
 
 class QdrantVectorStore(VectorStore):
@@ -46,7 +52,7 @@ class QdrantVectorStore(VectorStore):
         self._client = QdrantClient(
             url=config.url,
             api_key=config.api_key,
-            timeout=config.timeout,
+            timeout=int(config.timeout),
         )
         self._vector_size: int | None = None
 
@@ -86,7 +92,7 @@ class QdrantVectorStore(VectorStore):
     ) -> list[VectorSearchHit]:
         """Search similar memory points scoped to a user and agent namespace."""
 
-        must_conditions: list[models.FieldCondition] = [
+        must_conditions: list[Any] = [
             models.FieldCondition(
                 key="user_id",
                 match=models.MatchValue(value=context.user_id),

@@ -9,10 +9,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from hello_agents.rag.config import RagConfig
+from hello_agents.rag.models import RagChunk
+
 try:
-    from qdrant_client import QdrantClient, models  # type: ignore[import-not-found]
+    from qdrant_client import (  # type: ignore[import-not-found]
+        QdrantClient as _qdrant_client_cls,
+    )
+    from qdrant_client import models as _qdrant_models  # type: ignore[import-not-found]
 except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths.
-    QdrantClient = None  # type: ignore[assignment]
+    _qdrant_client_cls = None  # type: ignore[assignment,misc]
 
     @dataclass(slots=True, frozen=True)
     class _SparseVector:
@@ -31,10 +37,10 @@ except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths
                 "qdrant_client is required for Qdrant-backed RAG storage."
             )
 
-    models = _MissingQdrantModels()
+    _qdrant_models = _MissingQdrantModels()  # type: ignore[assignment]
 
-from hello_agents.rag.config import RagConfig
-from hello_agents.rag.models import RagChunk
+QdrantClient: Any = _qdrant_client_cls
+models: Any = _qdrant_models
 
 
 class RagQdrantStore:
@@ -56,7 +62,7 @@ class RagQdrantStore:
         self._client = QdrantClient(
             url=config.qdrant_url,
             api_key=config.qdrant_api_key,
-            timeout=config.qdrant_timeout,
+            timeout=int(config.qdrant_timeout),
         )
         self._vector_size: int | None = None
 
@@ -82,9 +88,7 @@ class RagQdrantStore:
                     id=chunk.id,
                     vector={
                         self._DENSE_VECTOR_NAME: list(embedding),
-                        self._SPARSE_VECTOR_NAME: _text_to_sparse_vector(
-                            chunk.content
-                        ),
+                        self._SPARSE_VECTOR_NAME: _text_to_sparse_vector(chunk.content),
                     },
                     payload={
                         "source": chunk.source,
@@ -184,10 +188,7 @@ class RagQdrantStore:
             if mismatch_reason is None:
                 return
             points_count = _collection_points_count(collection_info)
-            if (
-                points_count == 0
-                or self._config.recreate_collection_on_schema_mismatch
-            ):
+            if points_count == 0 or self._config.recreate_collection_on_schema_mismatch:
                 self._client.delete_collection(self._config.collection)
                 self._create_collection(vector_size=vector_size)
                 return

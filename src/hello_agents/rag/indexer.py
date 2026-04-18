@@ -5,18 +5,22 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 from uuid import uuid4
-
-try:
-    from markitdown import MarkItDown  # type: ignore[import-not-found]
-except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths.
-    MarkItDown = None  # type: ignore[assignment]
 
 from hello_agents.memory.embeddings import build_embedder
 from hello_agents.rag.config import RagConfig
 from hello_agents.rag.models import RagChunk
 from hello_agents.rag.qdrant_store import RagQdrantStore
+
+try:
+    from markitdown import (
+        MarkItDown as _markitdown_cls,  # type: ignore[import-not-found]
+    )
+except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths.
+    _markitdown_cls = None  # type: ignore[assignment,misc]
+
+MarkItDown: Any = _markitdown_cls
 
 
 class _ChunkBlock(TypedDict):

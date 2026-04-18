@@ -19,6 +19,7 @@ class KnowledgeQAConfig:
     trace_prompt_chars: int = 4_000
     knowledge_base_store_path: Path = Path(".hello_agents/knowledge_bases.json")
     trace_store_path: Path = Path(".hello_agents/knowledge_qa_traces.jsonl")
+    upload_root_path: Path = Path(".hello_agents/uploads")
 
     @classmethod
     def from_env(cls) -> KnowledgeQAConfig:
@@ -49,6 +50,12 @@ class KnowledgeQAConfig:
                 os.getenv(
                     "KNOWLEDGE_QA_TRACE_PATH",
                     ".hello_agents/knowledge_qa_traces.jsonl",
+                )
+            ),
+            upload_root_path=Path(
+                os.getenv(
+                    "KNOWLEDGE_QA_UPLOAD_ROOT",
+                    ".hello_agents/uploads",
                 )
             ),
         )
