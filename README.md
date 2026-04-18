@@ -12,6 +12,41 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Knowledge QA App
+
+The repository now includes a first-party knowledge QA product surface with:
+
+- formal CLI: `hello-agents-knowledge-qa`
+- HTTP API: FastAPI under `src/hello_agents/apps/knowledge_qa/api.py`
+- Web console: React + Vite app under `frontend/knowledge-qa/`
+
+Backend startup:
+
+```bash
+uvicorn hello_agents.apps.knowledge_qa.api:create_app --factory --reload
+```
+
+CLI examples:
+
+```bash
+hello-agents-knowledge-qa ingest \
+  --name "Atlas Demo KB" \
+  --paths "examples/knowledge_qa_demo_data"
+
+hello-agents-knowledge-qa inspect
+```
+
+Frontend startup:
+
+```bash
+cd frontend/knowledge-qa
+npm install
+npm run dev
+```
+
+See [`docs/knowledge_qa.md`](/Users/liang/code/hello-agents/docs/knowledge_qa.md)
+for API routes, frontend workflow, and end-to-end setup.
+
 ## Unified LLM Client
 
 The project includes a lightweight unified LLM client built on top of the
@@ -134,6 +169,7 @@ python examples/react_agent_with_tavily.py \
 ├── config/
 ├── docs/
 ├── examples/
+├── frontend/
 ├── pyproject.toml
 ├── src/
 │   └── hello_agents/

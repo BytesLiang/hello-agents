@@ -1,10 +1,11 @@
 # Knowledge QA
 
-本文档说明 `hello-agents` 中知识库问答应用层的当前用法与运行方式。
+本文档说明 `hello-agents` 中知识库问答产品的当前用法与运行方式。
 
 相关实现位于：
 
 - `src/hello_agents/apps/knowledge_qa/`
+- `frontend/knowledge-qa/`
 - `examples/knowledge_qa_cli.py`
 - `examples/knowledge_qa_demo_data/`
 
@@ -18,6 +19,9 @@
 - 基于现有 RAG 子系统建立索引
 - 通过 `ask` 入口完成知识库问答
 - 回答返回引用信息
+- 正式 CLI 命令入口
+- FastAPI HTTP API
+- React + Vite Web 管理台
 - 运行 trace 落盘到本地 JSONL
 - 知识库元数据落盘到本地 JSON
 
@@ -26,7 +30,8 @@
 - query rewrite
 - rerank
 - 多知识库权限隔离
-- API / Web UI
+- 浏览器目录上传
+- 异步导入任务与进度轮询
 - 离线评测 runner
 
 ## 目录结构
@@ -36,18 +41,25 @@
 ```text
 src/hello_agents/apps/knowledge_qa/
 ├── __init__.py
+├── api.py
+├── api_schemas.py
 ├── answer.py
+├── cli.py
 ├── config.py
 ├── ingest.py
 ├── models.py
 ├── retrieve.py
+├── runtime.py
 ├── service.py
 ├── store.py
 └── trace.py
 
+frontend/knowledge-qa/
 examples/knowledge_qa_cli.py
 config/knowledge_qa.example.env
 tests/test_knowledge_qa.py
+tests/test_knowledge_qa_api.py
+tests/test_knowledge_qa_cli.py
 ```
 
 ## 配置
@@ -85,12 +97,79 @@ EMBED_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 - 知识库元数据写入 `.hello_agents/knowledge_bases.json`
 - 运行 trace 写入 `.hello_agents/knowledge_qa_traces.jsonl`
 
+## 运行后端 API
+
+先准备 `.env` 和 Qdrant / LLM 依赖，然后启动：
+
+```bash
+uvicorn hello_agents.apps.knowledge_qa.api:create_app --factory --reload
+```
+
+如果你希望直接从 Python 模块启动，也可以运行：
+
+```bash
+python -m hello_agents.apps.knowledge_qa.api
+```
+
+### API 路由
+
+- `GET /api/health`
+- `GET /api/knowledge-bases`
+- `GET /api/knowledge-bases/{kb_id}`
+- `POST /api/knowledge-bases`
+- `POST /api/knowledge-bases/upload`
+- `POST /api/knowledge-bases/{kb_id}/ask`
+- `GET /api/traces?limit=10`
+
+### API 示例
+
+创建知识库：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/knowledge-bases \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Atlas Demo KB",
+    "description": "Demo knowledge base",
+    "paths": ["examples/knowledge_qa_demo_data"]
+  }'
+```
+
+从 Web 或浏览器客户端上传本地文件创建知识库：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/knowledge-bases/upload \
+  -F 'name=Atlas Upload KB' \
+  -F 'description=Uploaded local docs' \
+  -F 'files=@examples/knowledge_qa_demo_data/01_overview.md' \
+  -F 'files=@examples/knowledge_qa_demo_data/02_architecture.md'
+```
+
+提问：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/knowledge-bases/<kb_id>/ask \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "Which vector store does Atlas use for retrieval?"
+  }'
+```
+
 ## CLI 用法
+
+安装后推荐使用正式命令：
+
+```bash
+hello-agents-knowledge-qa --help
+```
+
+仓库内保留了 [examples/knowledge_qa_cli.py](/Users/liang/code/hello-agents/examples/knowledge_qa_cli.py)
+作为薄兼容包装，但正式入口已经切到 console script。
 
 ### 1. 导入知识库
 
 ```bash
-python examples/knowledge_qa_cli.py ingest \
+hello-agents-knowledge-qa ingest \
   --name "Project Docs" \
   --paths "docs,README.md" \
   --description "Project knowledge base"
@@ -105,7 +184,7 @@ python examples/knowledge_qa_cli.py ingest \
 如果你想快速演示，可以直接导入仓库内的 demo 数据：
 
 ```bash
-python examples/knowledge_qa_cli.py ingest \
+hello-agents-knowledge-qa ingest \
   --name "Atlas Demo KB" \
   --paths "examples/knowledge_qa_demo_data" \
   --description "Demo knowledge base for Atlas assistant"
@@ -114,7 +193,7 @@ python examples/knowledge_qa_cli.py ingest \
 ### 2. 查看知识库
 
 ```bash
-python examples/knowledge_qa_cli.py inspect
+hello-agents-knowledge-qa inspect
 ```
 
 输出示例：
@@ -126,7 +205,7 @@ python examples/knowledge_qa_cli.py inspect
 ### 3. 提问
 
 ```bash
-python examples/knowledge_qa_cli.py ask \
+hello-agents-knowledge-qa ask \
   --question "What does the context engine do?" \
   --kb-id "<kb_id>"
 ```
@@ -148,8 +227,40 @@ python examples/knowledge_qa_cli.py ask \
 ### 4. 查看最近 trace
 
 ```bash
-python examples/knowledge_qa_cli.py inspect --traces
+hello-agents-knowledge-qa inspect --traces --limit 10
 ```
+
+## Web 管理台
+
+前端工程位于 `frontend/knowledge-qa/`，默认通过 Vite dev server 代理 `/api`
+到本地 FastAPI 服务。
+
+```bash
+cd frontend/knowledge-qa
+npm install
+npm run dev
+```
+
+默认开发地址：
+
+- 前端：`http://127.0.0.1:5173`
+- 后端：`http://127.0.0.1:8000`
+
+当前 Web 管理台包含两页：
+
+- `/`
+  - 展示知识库列表
+  - 提供 `name / description / local files` 的同步导入表单
+- `/knowledge-bases/:kbId`
+  - 展示知识库元数据和来源路径
+  - 提供问答表单
+  - 展示最新回答、引用和最近 trace
+
+注意：
+
+- Web 端当前支持“本地文件上传”
+- CLI 仍然支持“服务器本地路径”
+- 上传文件会先落到 `.hello_agents/uploads/` 再复用现有 ingest 流程
 
 ## `KnowledgeQAService` 接口
 
@@ -253,11 +364,9 @@ result = service.ask(
 - 没有实现 query rewrite 和 rerank
 - 没有做精确引用命中校验
 - 没有对模型输出做严格 JSON schema 验证
-- CLI 只适合开发与演示，不适合作为正式 API
-
-## 建议的下一步
-
-在当前基础上，优先继续补这几项：
+- Web 端目前只接受服务端可访问路径
+- 导入仍是同步阻塞式，没有后台任务机制
+- recent traces 当前是全局视图，不按知识库过滤
 
 1. 生成结果的更严格 schema 校验
 2. `knowledge_qa` 使用示例数据集

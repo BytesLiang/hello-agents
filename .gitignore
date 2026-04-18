@@ -26,7 +26,11 @@ venv/
 .dmypy.json
 .benchmarks/
 .eggs/
+node_modules/
 pip-wheel-metadata/
 site/
 docs/_build/
+frontend/**/dist/
+frontend/**/coverage/
+*.tsbuildinfo
 *.log
