@@ -133,6 +133,12 @@ class StubRagRetriever:
 class StubRagIndexer:
     """Return deterministic indexing counts for tests."""
 
+    def __init__(self) -> None:
+        """Track deletion requests for assertions."""
+
+        self.deleted_document_ids: list[tuple[str, str]] = []
+        self.deleted_kb_ids: list[str] = []
+
     def index_file(self, path: Path, *, kb_id: str, document_id: str) -> int:
         """Return one chunk per provided file for simplicity."""
 
@@ -142,7 +148,12 @@ class StubRagIndexer:
     def delete_document(self, *, kb_id: str, document_id: str) -> None:
         """Accept document deletion requests during tests."""
 
-        del kb_id, document_id
+        self.deleted_document_ids.append((kb_id, document_id))
+
+    def delete_knowledge_base(self, *, kb_id: str) -> None:
+        """Accept knowledge-base deletion requests during tests."""
+
+        self.deleted_kb_ids.append(kb_id)
 
 
 def build_service(
@@ -224,6 +235,21 @@ def test_remove_document_updates_knowledge_base_metadata(tmp_path: Path) -> None
     assert updated.document_count == 1
     assert updated.chunk_count == 3
     assert len(updated.documents) == 1
+
+
+def test_delete_knowledge_base_removes_metadata_and_index(tmp_path: Path) -> None:
+    """Verify deleting a knowledge base clears metadata and vector ownership."""
+
+    document = tmp_path / "guide.md"
+    document.write_text("# Guide\n\nAlpha", encoding="utf-8")
+    indexer = StubRagIndexer()
+    service = build_service(tmp_path, indexer=indexer)
+    knowledge_base = service.ingest("Atlas Docs", [document], description="Atlas KB")
+
+    service.delete_knowledge_base(knowledge_base.kb_id)
+
+    assert service.get_knowledge_base(knowledge_base.kb_id) is None
+    assert indexer.deleted_kb_ids == [knowledge_base.kb_id]
 
 
 def test_ask_returns_answer_and_citations(tmp_path: Path) -> None:
@@ -436,6 +462,32 @@ def test_classifier_treats_singular_word_count_as_document_statistic() -> None:
 
     assert classification.question_type == "document_statistic"
     assert classification.target_files == ("01_overview.md",)
+
+
+def test_classifier_drops_invented_target_files_from_llm_output() -> None:
+    """Verify semantic classification cannot invent target files."""
+
+    llm = FakeLLM(
+        responses=[
+            json.dumps(
+                {
+                    "question_type": "fact_lookup",
+                    "target_files": ["01_overview.md"],
+                    "needs_document_inspection": False,
+                    "needs_multi_step": False,
+                    "reason": "This concept is likely defined in 01_overview.md.",
+                }
+            )
+        ]
+    )
+
+    decision = QuestionClassifier(llm).classify_with_trace("skills是什么")
+
+    assert decision.classification.question_type == "fact_lookup"
+    assert decision.classification.target_files == ()
+    assert decision.classification.reason == (
+        "The question can be handled as grounded retrieval."
+    )
 
 
 def test_retriever_deduplicates_and_prioritizes_named_file_chunks(

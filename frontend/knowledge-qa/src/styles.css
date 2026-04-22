@@ -310,6 +310,16 @@ code {
   background: rgba(15, 118, 110, 0.12);
 }
 
+.danger-button {
+  border-color: rgba(180, 35, 24, 0.18);
+  color: var(--danger);
+  background: rgba(180, 35, 24, 0.06);
+}
+
+.danger-button:hover {
+  background: rgba(180, 35, 24, 0.1);
+}
+
 .primary-button:hover:not(:disabled) {
   transform: translateY(-2px);
 }
@@ -423,6 +433,12 @@ code {
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.96)),
     var(--panel);
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.kb-card-shell,
+.panel-actions {
+  display: grid;
+  gap: 12px;
 }
 
 .kb-card:hover {

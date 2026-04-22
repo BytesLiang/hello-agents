@@ -146,7 +146,6 @@ class QuestionAgent:
             round_index += 1
             retrieval = self._retriever.retrieve(
                 query,
-                source_paths=source_paths,
                 kb_id=kb_id,
             )
             last_retrieval = retrieval

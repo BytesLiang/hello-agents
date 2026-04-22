@@ -72,6 +72,11 @@ class StubRagRetriever:
 class StubRagIndexer:
     """Return deterministic indexing counts for CLI tests."""
 
+    def __init__(self) -> None:
+        """Track deletion requests for assertions."""
+
+        self.deleted_kb_ids: list[str] = []
+
     def index_file(self, path: Path, *, kb_id: str, document_id: str) -> int:
         """Return a fixed chunk count for indexed inputs."""
 
@@ -82,6 +87,11 @@ class StubRagIndexer:
         """Accept document deletion requests during tests."""
 
         del kb_id, document_id
+
+    def delete_knowledge_base(self, *, kb_id: str) -> None:
+        """Accept knowledge-base deletion requests during tests."""
+
+        self.deleted_kb_ids.append(kb_id)
 
 
 def build_runtime(

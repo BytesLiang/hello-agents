@@ -182,9 +182,10 @@ def _classification_from_payload(
         question_type = fallback.question_type
 
     raw_target_files = payload.get("target_files", list(fallback.target_files))
-    target_files = _normalize_target_files(raw_target_files)
-    if not target_files:
-        target_files = fallback.target_files
+    target_files = _restrict_target_files_to_explicit_mentions(
+        _normalize_target_files(raw_target_files),
+        explicit_target_files=fallback.target_files,
+    )
 
     raw_reason = payload.get("reason")
     raw_needs_document_inspection = payload.get(
@@ -211,7 +212,7 @@ def _classification_from_payload(
         ),
         reason=(
             raw_reason
-            if isinstance(raw_reason, str) and raw_reason
+            if isinstance(raw_reason, str) and raw_reason and target_files
             else fallback.reason
         ),
     )
@@ -250,7 +251,7 @@ def _build_classification_prompt(
         "Return JSON with this exact shape:\n"
         "{\n"
         '  "question_type": "fact_lookup",\n'
-        '  "target_files": ["01_overview.md"],\n'
+        '  "target_files": [],\n'
         '  "needs_document_inspection": false,\n'
         '  "needs_multi_step": false,\n'
         '  "reason": "string"\n'
@@ -275,3 +276,16 @@ def _normalize_target_files(raw_target_files: object) -> tuple[str, ...]:
         if normalized:
             normalized_files.append(normalized)
     return tuple(normalized_files)
+
+
+def _restrict_target_files_to_explicit_mentions(
+    target_files: tuple[str, ...],
+    *,
+    explicit_target_files: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Keep only target files explicitly mentioned in the user question."""
+
+    if not explicit_target_files:
+        return ()
+    allowed = set(explicit_target_files)
+    return tuple(item for item in target_files if item in allowed)

@@ -241,7 +241,6 @@ class KnowledgeRetriever:
         self,
         question: str,
         *,
-        source_paths: Sequence[str] = (),
         kb_id: str | None = None,
     ) -> RetrievalResult:
         """Retrieve normalized chunks for one question."""
@@ -266,12 +265,6 @@ class KnowledgeRetriever:
                 kb_id=kb_id,
             )
         ]
-        if source_paths:
-            chunks = [
-                chunk
-                for chunk in chunks
-                if _matches_any_source(chunk.source, source_paths)
-            ]
         deduplicated_chunks = _deduplicate_chunks(chunks)
         rerank_result = self._reranker.rerank(
             query=query,
@@ -301,31 +294,6 @@ def _normalize_chunk(chunk: RagChunk) -> RetrievedChunk:
         score=chunk.score,
         metadata=dict(chunk.metadata),
     )
-
-
-def _matches_any_source(source: str, source_paths: Sequence[str]) -> bool:
-    """Return whether a source path belongs to one of the supplied roots."""
-
-    for raw_path in source_paths:
-        if _path_matches(source, raw_path):
-            return True
-    return False
-
-
-def _path_matches(source: str, base: str) -> bool:
-    """Return whether a source path matches or is nested under a base path."""
-
-    source_path = Path(source).expanduser()
-    base_path = Path(base).expanduser()
-    try:
-        resolved_source = source_path.resolve(strict=False)
-        resolved_base = base_path.resolve(strict=False)
-        return (
-            resolved_source == resolved_base or resolved_base in resolved_source.parents
-        )
-    except OSError:
-        return source.startswith(base)
-
 
 def _extract_referenced_filenames(
     question: str,

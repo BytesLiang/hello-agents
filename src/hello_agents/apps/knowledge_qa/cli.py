@@ -56,6 +56,27 @@ def create_parser() -> argparse.ArgumentParser:
         default=10,
         help="Maximum number of trace rows to show with --traces.",
     )
+
+    eval_parser = subparsers.add_parser(
+        "eval",
+        help="Run offline evaluation against a dataset.",
+    )
+    eval_parser.add_argument(
+        "--dataset",
+        required=True,
+        help="Path to the evaluation dataset (JSON or JSONL).",
+    )
+    eval_parser.add_argument(
+        "--output",
+        default=None,
+        help="Path to save the evaluation report as JSON.",
+    )
+    eval_parser.add_argument(
+        "--kb-id",
+        default=None,
+        help="Knowledge base identifier for source filtering.",
+    )
+
     return parser
 
 
@@ -132,6 +153,38 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"[{citation.index}] {citation.source} - {citation.snippet}")
         if result.trace_id:
             print(f"\nTrace: {result.trace_id}")
+        return 0
+
+    if args.command == "eval":
+        from hello_agents.apps.knowledge_qa.eval import (
+            EvalRunner,
+            format_report,
+            load_dataset,
+            save_report_json,
+        )
+
+        dataset_path = Path(args.dataset)
+        if not dataset_path.exists():
+            print(f"Dataset not found: {dataset_path}", file=sys.stderr)
+            return 1
+
+        cases = load_dataset(dataset_path)
+        if not cases:
+            print("Dataset contains no valid evaluation cases.", file=sys.stderr)
+            return 1
+
+        print(f"Running evaluation with {len(cases)} cases...")
+        service = runtime.build_answer_service()
+        runner = EvalRunner(service)
+        report = runner.run(cases, dataset_path=str(dataset_path))
+
+        print(format_report(report))
+
+        if args.output:
+            output_path = Path(args.output)
+            save_report_json(report, output_path)
+            print(f"\nReport saved to: {output_path}")
+
         return 0
 
     raise RuntimeError(f"Unsupported command: {args.command}")

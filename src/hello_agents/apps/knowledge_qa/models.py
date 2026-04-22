@@ -46,7 +46,6 @@ class KnowledgeBase:
     status: KnowledgeBaseStatus = KnowledgeBaseStatus.READY
     document_count: int = 0
     chunk_count: int = 0
-    uses_scoped_index: bool = False
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
 

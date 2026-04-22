@@ -41,6 +41,22 @@ export function getKnowledgeBase(kbId) {
   return requestJson(`/api/knowledge-bases/${kbId}`);
 }
 
+export async function deleteKnowledgeBase(kbId) {
+  const response = await fetch(`${resolveApiBaseUrl()}/api/knowledge-bases/${kbId}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    const payload = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
+    throw new Error(
+      buildErrorMessage(payload, `Request failed with status ${response.status}.`)
+    );
+  }
+}
+
 export function createKnowledgeBase(payload) {
   return requestJson("/api/knowledge-bases", {
     method: "POST",

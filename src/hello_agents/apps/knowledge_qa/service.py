@@ -122,7 +122,6 @@ class KnowledgeQAService:
             name=name.strip() or "knowledge-base",
             description=description.strip(),
             status=KnowledgeBaseStatus.INDEXING,
-            uses_scoped_index=True,
         )
         knowledge_base = self._knowledge_base_store.save(knowledge_base)
 
@@ -209,6 +208,22 @@ class KnowledgeQAService:
         )
         return self._knowledge_base_store.save(updated)
 
+    def delete_knowledge_base(self, kb_id: str) -> None:
+        """Delete one knowledge base and all of its indexed data."""
+
+        knowledge_base = self.get_knowledge_base(kb_id)
+        if knowledge_base is None:
+            raise ValueError(f"Unknown knowledge base: {kb_id}")
+        if self._ingester is None:
+            raise RuntimeError("Knowledge QA ingestion requires a configured indexer.")
+
+        self._ingester.delete_knowledge_base(kb_id=kb_id)
+        _cleanup_uploaded_documents(
+            knowledge_base,
+            upload_root_path=self.config.upload_root_path,
+        )
+        self._knowledge_base_store.delete(kb_id)
+
     def ask(
         self,
         question: str,
@@ -232,11 +247,7 @@ class KnowledgeQAService:
         if kb_id is not None and knowledge_base is None:
             raise ValueError(f"Unknown knowledge base: {kb_id}")
         source_paths = () if knowledge_base is None else knowledge_base.source_paths
-        query_kb_id = (
-            knowledge_base.kb_id
-            if knowledge_base is not None and knowledge_base.uses_scoped_index
-            else None
-        )
+        query_kb_id = knowledge_base.kb_id if knowledge_base is not None else None
 
         started = perf_counter()
         agent_result = self._agent.run(
@@ -577,6 +588,47 @@ def _apply_ingestion_result(
         chunk_count=sum(document.chunk_count for document in merged_documents),
         status=status,
     )
+
+
+def _cleanup_uploaded_documents(
+    knowledge_base: KnowledgeBase,
+    *,
+    upload_root_path: Path,
+) -> None:
+    """Delete uploaded files owned by one knowledge base when they are local."""
+
+    try:
+        normalized_upload_root = upload_root_path.resolve(strict=False)
+    except OSError:
+        return
+
+    directories: set[Path] = set()
+    for document in knowledge_base.documents:
+        source_path = Path(document.source_path)
+        try:
+            resolved_source = source_path.resolve(strict=False)
+        except OSError:
+            continue
+        if normalized_upload_root not in resolved_source.parents:
+            continue
+        if source_path.exists():
+            try:
+                source_path.unlink()
+            except OSError:
+                continue
+        parent = source_path.parent
+        if parent != normalized_upload_root:
+            directories.add(parent)
+
+    for directory in sorted(
+        directories,
+        key=lambda item: len(item.parts),
+        reverse=True,
+    ):
+        try:
+            directory.rmdir()
+        except OSError:
+            continue
 
 
 def _normalize_failure_reason(final_assessment: object) -> str:

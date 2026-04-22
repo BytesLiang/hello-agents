@@ -124,6 +124,12 @@ class StubRagRetriever:
 class StubRagIndexer:
     """Return deterministic indexing counts for API tests."""
 
+    def __init__(self) -> None:
+        """Track deletion requests for assertions."""
+
+        self.deleted_document_ids: list[tuple[str, str]] = []
+        self.deleted_kb_ids: list[str] = []
+
     def index_file(self, path: Path, *, kb_id: str, document_id: str) -> int:
         """Return a fixed chunk count for indexed inputs."""
 
@@ -133,7 +139,12 @@ class StubRagIndexer:
     def delete_document(self, *, kb_id: str, document_id: str) -> None:
         """Accept document deletion requests during tests."""
 
-        del kb_id, document_id
+        self.deleted_document_ids.append((kb_id, document_id))
+
+    def delete_knowledge_base(self, *, kb_id: str) -> None:
+        """Accept knowledge-base deletion requests during tests."""
+
+        self.deleted_kb_ids.append(kb_id)
 
 
 class FailingRagIndexer:
@@ -149,6 +160,11 @@ class FailingRagIndexer:
         """Accept document deletion requests during tests."""
 
         del kb_id, document_id
+
+    def delete_knowledge_base(self, *, kb_id: str) -> None:
+        """Accept knowledge-base deletion requests during tests."""
+
+        del kb_id
 
 
 def build_runtime(
@@ -290,6 +306,25 @@ def test_delete_document_endpoint_removes_one_document(tmp_path: Path) -> None:
     assert payload["document_count"] == 1
     assert len(payload["documents"]) == 1
     assert payload["documents"][0]["document_id"] != document_id
+
+
+def test_delete_knowledge_base_endpoint_removes_one_knowledge_base(
+    tmp_path: Path,
+) -> None:
+    """Verify the delete endpoint removes metadata and returns 204."""
+
+    document = tmp_path / "guide.md"
+    document.write_text("# Guide\n\nAlpha", encoding="utf-8")
+    indexer = StubRagIndexer()
+    runtime = build_runtime(tmp_path, indexer=indexer)
+    knowledge_base = runtime.build_ingest_service().ingest("Guide KB", [document])
+    client = TestClient(create_app(runtime))
+
+    response = client.delete(f"/api/knowledge-bases/{knowledge_base.kb_id}")
+
+    assert response.status_code == 204
+    assert runtime.build_read_service().get_knowledge_base(knowledge_base.kb_id) is None
+    assert indexer.deleted_kb_ids == [knowledge_base.kb_id]
 
 
 def test_create_knowledge_base_logs_unhandled_exceptions(

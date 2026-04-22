@@ -78,6 +78,11 @@ class RagIndexer:
 
         self._store.delete_document(kb_id=kb_id, document_id=document_id)
 
+    def delete_knowledge_base(self, *, kb_id: str) -> None:
+        """Delete all indexed chunks for one knowledge base."""
+
+        self._store.delete_knowledge_base(kb_id=kb_id)
+
     def _read_text(self, path: Path) -> str:
         """Convert a file into Markdown text via MarkItDown."""
 

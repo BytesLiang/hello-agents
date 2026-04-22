@@ -18,6 +18,9 @@ class SupportsDocumentIndex(Protocol):
     def delete_document(self, *, kb_id: str, document_id: str) -> None:
         """Delete one indexed document from the vector store."""
 
+    def delete_knowledge_base(self, *, kb_id: str) -> None:
+        """Delete all indexed chunks for one knowledge base."""
+
 
 @dataclass(slots=True, frozen=True)
 class IndexedDocument:
@@ -100,6 +103,11 @@ class KnowledgeBaseIngester:
         """Delete one indexed document from the backing store."""
 
         self._indexer.delete_document(kb_id=kb_id, document_id=document_id)
+
+    def delete_knowledge_base(self, *, kb_id: str) -> None:
+        """Delete all indexed chunks for one knowledge base."""
+
+        self._indexer.delete_knowledge_base(kb_id=kb_id)
 
 
 def resolve_documents(paths: Sequence[Path]) -> tuple[Path, ...]:

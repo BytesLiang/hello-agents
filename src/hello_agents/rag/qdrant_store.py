@@ -50,6 +50,8 @@ class RagQdrantStore:
 
     _DENSE_VECTOR_NAME = "dense"
     _SPARSE_VECTOR_NAME = "sparse"
+    _KB_ID_FIELD = "kb_id"
+    _DOCUMENT_ID_FIELD = "document_id"
 
     def __init__(self, config: RagConfig) -> None:
         """Store Qdrant connection settings."""
@@ -67,6 +69,7 @@ class RagQdrantStore:
             timeout=int(config.qdrant_timeout),
         )
         self._vector_size: int | None = None
+        self._payload_indexes_ensured = False
 
     def upsert(
         self,
@@ -144,6 +147,7 @@ class RagQdrantStore:
         # The retriever does not currently pass the raw query text, so hybrid
         # search is exposed through `search_hybrid()` below and used by the
         # retriever. Keep `search()` as dense-only compatibility fallback.
+        self._ensure_payload_indexes()
         response = self._client.query_points(
             collection_name=self._config.collection,
             query=list(embedding),
@@ -169,6 +173,7 @@ class RagQdrantStore:
     ) -> list[RagChunk]:
         """Search with dense+sparse hybrid retrieval and RRF fusion."""
 
+        self._ensure_payload_indexes()
         query_filter = _kb_filter(kb_id)
         response = self._client.query_points(
             collection_name=self._config.collection,
@@ -201,6 +206,7 @@ class RagQdrantStore:
     def delete_document(self, *, kb_id: str, document_id: str) -> None:
         """Delete one indexed document by knowledge-base and document id."""
 
+        self._ensure_payload_indexes()
         self._client.delete(
             collection_name=self._config.collection,
             points_selector=models.FilterSelector(
@@ -221,6 +227,17 @@ class RagQdrantStore:
             timeout=int(self._config.qdrant_timeout),
         )
 
+    def delete_knowledge_base(self, *, kb_id: str) -> None:
+        """Delete all indexed chunks for one knowledge base."""
+
+        self._ensure_payload_indexes()
+        self._client.delete(
+            collection_name=self._config.collection,
+            points_selector=models.FilterSelector(filter=_kb_filter(kb_id)),
+            wait=self._config.qdrant_wait_for_upsert,
+            timeout=int(self._config.qdrant_timeout),
+        )
+
     def _ensure_collection(self, *, vector_size: int) -> None:
         """Create the collection if needed."""
 
@@ -234,6 +251,7 @@ class RagQdrantStore:
                 vector_size=vector_size,
             )
             if mismatch_reason is None:
+                self._ensure_payload_indexes()
                 return
             points_count = _collection_points_count(collection_info)
             if points_count == 0 or self._config.recreate_collection_on_schema_mismatch:
@@ -270,6 +288,28 @@ class RagQdrantStore:
             },
             timeout=int(self._config.qdrant_timeout),
         )
+        self._ensure_payload_indexes(force=True)
+
+    def _ensure_payload_indexes(self, *, force: bool = False) -> None:
+        """Create payload indexes required by scoped knowledge-base filters."""
+
+        if self._payload_indexes_ensured and not force:
+            return
+        self._client.create_payload_index(
+            collection_name=self._config.collection,
+            field_name=self._KB_ID_FIELD,
+            field_schema=models.PayloadSchemaType.KEYWORD,
+            wait=self._config.qdrant_wait_for_upsert,
+            timeout=int(self._config.qdrant_timeout),
+        )
+        self._client.create_payload_index(
+            collection_name=self._config.collection,
+            field_name=self._DOCUMENT_ID_FIELD,
+            field_schema=models.PayloadSchemaType.KEYWORD,
+            wait=self._config.qdrant_wait_for_upsert,
+            timeout=int(self._config.qdrant_timeout),
+        )
+        self._payload_indexes_ensured = True
 
 
 def _collection_schema_mismatch_reason(

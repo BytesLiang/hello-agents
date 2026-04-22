@@ -84,6 +84,35 @@ def create_app(runtime: KnowledgeQARuntime | None = None) -> FastAPI:
             )
         return KnowledgeBaseResponse.from_domain(knowledge_base)
 
+    @app.delete(
+        "/api/knowledge-bases/{kb_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    def delete_knowledge_base(kb_id: str) -> None:
+        """Delete one knowledge base and its indexed data."""
+
+        service = _build_service(app_runtime.build_ingest_service)
+        logger.info("Delete knowledge base requested. kb_id=%s", kb_id)
+        try:
+            service.delete_knowledge_base(kb_id)
+        except ValueError as exc:
+            logger.info(
+                "Delete knowledge base rejected. kb_id=%s reason=%s",
+                kb_id,
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            logger.exception("Delete knowledge base failed. kb_id=%s", kb_id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(exc),
+            ) from exc
+        logger.info("Delete knowledge base completed. kb_id=%s", kb_id)
+
     @app.post(
         "/api/knowledge-bases",
         response_model=KnowledgeBaseResponse,

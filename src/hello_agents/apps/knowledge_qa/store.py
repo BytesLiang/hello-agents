@@ -96,10 +96,8 @@ class JsonKnowledgeBaseStore:
 def _knowledge_base_to_dict(knowledge_base: KnowledgeBase) -> dict[str, object]:
     """Serialize one knowledge base to a JSON-compatible dictionary."""
 
-    normalized_source_paths = (
-        tuple(document.source_path for document in knowledge_base.documents)
-        if knowledge_base.documents
-        else knowledge_base.source_paths
+    normalized_source_paths = tuple(
+        document.source_path for document in knowledge_base.documents
     )
     return {
         "kb_id": knowledge_base.kb_id,
@@ -111,17 +109,10 @@ def _knowledge_base_to_dict(knowledge_base: KnowledgeBase) -> dict[str, object]:
         ],
         "source_paths": list(normalized_source_paths),
         "status": knowledge_base.status.value,
-        "document_count": (
-            len(knowledge_base.documents)
-            if knowledge_base.documents
-            else knowledge_base.document_count
+        "document_count": len(knowledge_base.documents),
+        "chunk_count": sum(
+            document.chunk_count for document in knowledge_base.documents
         ),
-        "chunk_count": (
-            sum(document.chunk_count for document in knowledge_base.documents)
-            if knowledge_base.documents
-            else knowledge_base.chunk_count
-        ),
-        "uses_scoped_index": knowledge_base.uses_scoped_index,
         "created_at": knowledge_base.created_at,
         "updated_at": knowledge_base.updated_at,
     }
@@ -139,10 +130,8 @@ def _knowledge_base_from_dict(payload: dict[str, object]) -> KnowledgeBase:
             for item in documents
             if isinstance(item, dict)
         )
-    source_paths = payload.get("source_paths", ())
-    normalized_source_paths = _normalize_source_paths(
-        source_paths,
-        documents=normalized_documents,
+    normalized_source_paths = tuple(
+        document.source_path for document in normalized_documents
     )
     return KnowledgeBase(
         kb_id=str(payload["kb_id"]),
@@ -151,15 +140,8 @@ def _knowledge_base_from_dict(payload: dict[str, object]) -> KnowledgeBase:
         documents=normalized_documents,
         source_paths=normalized_source_paths,
         status=KnowledgeBaseStatus(str(status)),
-        document_count=_normalize_document_count(
-            payload.get("document_count", 0),
-            documents=normalized_documents,
-        ),
-        chunk_count=_normalize_chunk_count(
-            payload.get("chunk_count", 0),
-            documents=normalized_documents,
-        ),
-        uses_scoped_index=bool(payload.get("uses_scoped_index", False)),
+        document_count=len(normalized_documents),
+        chunk_count=sum(document.chunk_count for document in normalized_documents),
         created_at=str(payload.get("created_at", utc_now_iso())),
         updated_at=str(payload.get("updated_at", utc_now_iso())),
     )
@@ -191,45 +173,6 @@ def _knowledge_document_from_dict(payload: dict[str, object]) -> KnowledgeDocume
         created_at=str(payload.get("created_at", utc_now_iso())),
         updated_at=str(payload.get("updated_at", utc_now_iso())),
     )
-
-
-def _normalize_source_paths(
-    source_paths: object,
-    *,
-    documents: tuple[KnowledgeDocument, ...],
-) -> tuple[str, ...]:
-    """Return canonical source paths for one knowledge base."""
-
-    if documents:
-        return tuple(document.source_path for document in documents)
-    if isinstance(source_paths, list):
-        return tuple(str(item) for item in source_paths)
-    return ()
-
-
-def _normalize_document_count(
-    raw_count: object,
-    *,
-    documents: tuple[KnowledgeDocument, ...],
-) -> int:
-    """Return the persisted or derived document count."""
-
-    if documents:
-        return len(documents)
-    return _as_int(raw_count)
-
-
-def _normalize_chunk_count(
-    raw_count: object,
-    *,
-    documents: tuple[KnowledgeDocument, ...],
-) -> int:
-    """Return the persisted or derived chunk count."""
-
-    if documents:
-        return sum(document.chunk_count for document in documents)
-    return _as_int(raw_count)
-
 
 def _as_int(value: object) -> int:
     """Convert a JSON payload value to an integer when possible."""

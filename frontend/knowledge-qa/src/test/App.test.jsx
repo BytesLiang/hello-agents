@@ -247,4 +247,56 @@ describe("Knowledge QA frontend", () => {
     expect(await screen.findByText("/tmp/guide.md")).toBeInTheDocument();
     expect(await screen.findByText("/tmp/faq.txt")).toBeInTheDocument();
   });
+
+  it("deletes a knowledge base from the list", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockImplementationOnce(() =>
+        jsonResponse([
+          {
+            kb_id: "kb-1",
+            name: "Atlas Docs",
+            description: "Project docs",
+            source_paths: ["/srv/atlas"],
+            status: "ready",
+            document_count: 3,
+            chunk_count: 12,
+            created_at: "2026-04-18T12:00:00+00:00",
+            updated_at: "2026-04-18T12:00:00+00:00",
+          },
+        ])
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve({
+          ok: true,
+          status: 204,
+          headers: {
+            get() {
+              return null;
+            },
+          },
+          json: async () => ({}),
+          text: async () => "",
+        })
+      )
+      .mockImplementationOnce(() => jsonResponse([]));
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <KnowledgeBaseListPage />
+      </MemoryRouter>
+    );
+
+    expect(
+      await screen.findByRole("link", { name: /Atlas Docs/i })
+    ).toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "删除" }));
+
+    expect(await screen.findByText(/Atlas Docs.*已删除/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/knowledge-bases/kb-1");
+    expect(fetchMock.mock.calls[1][1].method).toBe("DELETE");
+  });
 });

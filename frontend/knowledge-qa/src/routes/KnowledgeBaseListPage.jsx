@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import {
   createKnowledgeBase,
+  deleteKnowledgeBase,
   listKnowledgeBases,
   uploadKnowledgeBase,
 } from "../api";
@@ -28,6 +29,7 @@ export function KnowledgeBaseListPage() {
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingKbId, setDeletingKbId] = useState("");
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
@@ -126,6 +128,22 @@ export function KnowledgeBaseListPage() {
           ? pickError.message
           : "无法打开本地文件选择器。"
       );
+    }
+  }
+
+  async function handleDeleteKnowledgeBase(kbId, kbName) {
+    setDeletingKbId(kbId);
+    setError("");
+    setSuccessMessage("");
+    try {
+      await deleteKnowledgeBase(kbId);
+      const refreshed = await listKnowledgeBases();
+      setKnowledgeBases(refreshed);
+      setSuccessMessage(`知识库「${kbName}」已删除。`);
+    } catch (deleteError) {
+      setError(deleteError.message);
+    } finally {
+      setDeletingKbId("");
     }
   }
 
@@ -271,7 +289,7 @@ export function KnowledgeBaseListPage() {
 
           <div className="card-list" role="list">
             {knowledgeBases.map((knowledgeBase) => (
-              <div key={knowledgeBase.kb_id} role="listitem">
+              <div className="kb-card-shell" key={knowledgeBase.kb_id} role="listitem">
                 <Link
                   aria-label={`${knowledgeBase.name} — ${knowledgeBase.description || "暂无描述"}`}
                   className="kb-card"
@@ -298,7 +316,20 @@ export function KnowledgeBaseListPage() {
                   <span>{formatDate(knowledgeBase.updated_at)}</span>
                   <span aria-hidden="true">进入工作区 →</span>
                 </div>
-              </Link>
+                </Link>
+                <button
+                  className="secondary-button danger-button"
+                  disabled={deletingKbId === knowledgeBase.kb_id}
+                  onClick={() =>
+                    handleDeleteKnowledgeBase(
+                      knowledgeBase.kb_id,
+                      knowledgeBase.name
+                    )
+                  }
+                  type="button"
+                >
+                  {deletingKbId === knowledgeBase.kb_id ? "删除中…" : "删除"}
+                </button>
               </div>
             ))}
           </div>

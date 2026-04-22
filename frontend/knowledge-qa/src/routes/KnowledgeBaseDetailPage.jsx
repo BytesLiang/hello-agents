@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   addKnowledgeBaseDocuments,
   askKnowledgeBase,
+  deleteKnowledgeBase,
   deleteKnowledgeBaseDocument,
   getKnowledgeBase,
   listTraces,
@@ -24,6 +25,7 @@ const ACCEPT_EXTENSIONS = ".md,.markdown,.txt,.rst,.json,.yaml,.yml,.html,.htm,.
 
 export function KnowledgeBaseDetailPage() {
   const { kbId } = useParams();
+  const navigate = useNavigate();
   const [knowledgeBase, setKnowledgeBase] = useState(null);
   const [traces, setTraces] = useState([]);
   const [question, setQuestion] = useState("");
@@ -31,6 +33,7 @@ export function KnowledgeBaseDetailPage() {
   const [loading, setLoading] = useState(true);
   const [asking, setAsking] = useState(false);
   const [updatingDocuments, setUpdatingDocuments] = useState(false);
+  const [deletingKnowledgeBase, setDeletingKnowledgeBase] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [desktopMode] = useState(() => isTauriRuntime());
@@ -173,6 +176,24 @@ export function KnowledgeBaseDetailPage() {
     }
   }
 
+  async function handleDeleteKnowledgeBase() {
+    if (!knowledgeBase) {
+      return;
+    }
+
+    setDeletingKnowledgeBase(true);
+    setError("");
+    setSuccessMessage("");
+    try {
+      await deleteKnowledgeBase(kbId);
+      await navigate("/");
+    } catch (deleteError) {
+      setError(deleteError.message);
+    } finally {
+      setDeletingKnowledgeBase(false);
+    }
+  }
+
   return (
     <main className="page-shell" id="main-content">
       <section className="hero-panel hero-panel-compact" aria-labelledby="detail-title">
@@ -204,9 +225,21 @@ export function KnowledgeBaseDetailPage() {
                   <p className="eyebrow">元数据</p>
                   <h2 id="metadata-heading">{knowledgeBase.name}</h2>
                 </div>
-                <StatusPill
-                  status={STATUS_LABELS[knowledgeBase.status] || knowledgeBase.status}
-                />
+                <div className="panel-actions">
+                  <StatusPill
+                    status={
+                      STATUS_LABELS[knowledgeBase.status] || knowledgeBase.status
+                    }
+                  />
+                  <button
+                    className="secondary-button"
+                    disabled={deletingKnowledgeBase}
+                    onClick={handleDeleteKnowledgeBase}
+                    type="button"
+                  >
+                    {deletingKnowledgeBase ? "删除中…" : "删除知识库"}
+                  </button>
+                </div>
               </div>
 
               <dl className="stat-grid stat-grid-expanded">

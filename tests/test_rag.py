@@ -303,6 +303,57 @@ def test_ensure_collection_recreates_empty_incompatible_collection() -> None:
     assert events == ["delete:hello_agents_rag", "create:3"]
 
 
+def test_ensure_collection_creates_payload_indexes_for_existing_collection() -> None:
+    """Verify scoped payload indexes are ensured on compatible collections."""
+
+    events: list[str] = []
+
+    class StubClient:
+        """Record payload-index creation for an existing collection."""
+
+        def collection_exists(self, name: str) -> bool:
+            del name
+            return True
+
+        def get_collection(self, name: str) -> dict[str, object]:
+            del name
+            return {
+                "config": {
+                    "params": {
+                        "vectors": {"dense": {"size": 3}},
+                        "sparse_vectors": {"sparse": {}},
+                    }
+                },
+                "points_count": 1,
+            }
+
+        def create_payload_index(
+            self,
+            *,
+            collection_name: str,
+            field_name: str,
+            field_schema: object,
+            wait: bool,
+            timeout: int,
+        ) -> None:
+            del collection_name, field_schema, wait, timeout
+            events.append(field_name)
+
+    store = RagQdrantStore.__new__(RagQdrantStore)
+    store._config = RagConfig(  # type: ignore[attr-defined]
+        enabled=True,
+        qdrant_url="http://localhost:6333",
+        embed=None,
+    )
+    store._client = StubClient()  # type: ignore[attr-defined]
+    store._vector_size = None  # type: ignore[attr-defined]
+    store._payload_indexes_ensured = False  # type: ignore[attr-defined]
+
+    store._ensure_collection(vector_size=3)  # type: ignore[attr-defined]
+
+    assert events == ["kb_id", "document_id"]
+
+
 def test_iter_batches_splits_chunks_and_embeddings_consistently() -> None:
     """Verify upsert batching preserves chunk-embedding alignment."""
 
