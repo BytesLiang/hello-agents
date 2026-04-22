@@ -103,6 +103,7 @@ class LLMClient:
             api_key=self._config.resolved_api_key(),
             base_url=self._config.base_url,
             timeout=self._config.timeout,
+            max_retries=self._config.max_retries,
         )
 
     @staticmethod

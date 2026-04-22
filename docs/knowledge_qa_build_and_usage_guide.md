@@ -1041,13 +1041,13 @@ Reranker（重排器）用于对检索结果进行二次排序，提升相关性
 | `KNOWLEDGE_QA_DESKTOP_PYTHON` | 自动探测 | Python 可执行文件路径 |
 | `KNOWLEDGE_QA_DESKTOP_PROJECT_ROOT` | 自动探测 | 项目根目录路径 |
 
-### 6.9 Web 前端配置
+### 6.10 Web 前端配置
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `VITE_KNOWLEDGE_QA_API_BASE_URL` | 空 | 后端 API 基础 URL（为空时使用 Vite 代理） |
 
-### 6.10 数据存储路径
+### 6.11 数据存储路径
 
 默认所有运行时数据存储在项目根目录的 `.hello_agents/` 下：
 

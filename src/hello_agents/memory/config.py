@@ -63,6 +63,7 @@ class EmbedConfig:
     api_key: str
     base_url: str
     timeout: float = 30.0
+    max_retries: int = 3
 
     @classmethod
     def from_env(cls, prefix: str = "EMBED") -> EmbedConfig | None:
@@ -75,12 +76,14 @@ class EmbedConfig:
             return None
         model_type = os.getenv(f"{prefix}_MODEL_TYPE", "dashscope")
         timeout = float(os.getenv(f"{prefix}_TIMEOUT", "30"))
+        max_retries = int(os.getenv(f"{prefix}_MAX_RETRIES", "3"))
         return cls(
             model_type=model_type,
             model_name=model_name,
             api_key=api_key,
             base_url=base_url,
             timeout=timeout,
+            max_retries=max_retries,
         )
 
 

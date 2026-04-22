@@ -27,6 +27,7 @@ class DashScopeEmbedder(Embedder):
             api_key=config.api_key,
             base_url=config.base_url,
             timeout=config.timeout,
+            max_retries=config.max_retries,
         )
 
     def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:

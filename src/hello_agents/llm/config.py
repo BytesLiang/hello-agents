@@ -15,6 +15,7 @@ class LLMConfig:
     base_url: str | None = None
     timeout: float = 30.0
     provider: str = "openai"
+    max_retries: int = 3
 
     @classmethod
     def from_env(cls, prefix: str = "LLM") -> LLMConfig:
@@ -25,12 +26,14 @@ class LLMConfig:
         base_url = os.getenv(f"{prefix}_BASE_URL")
         timeout = float(os.getenv(f"{prefix}_TIMEOUT", "30"))
         provider = os.getenv(f"{prefix}_PROVIDER", "openai")
+        max_retries = int(os.getenv(f"{prefix}_MAX_RETRIES", "3"))
         return cls(
             model=model,
             api_key=api_key,
             base_url=base_url,
             timeout=timeout,
             provider=provider,
+            max_retries=max_retries,
         )
 
     def resolved_api_key(self) -> str:

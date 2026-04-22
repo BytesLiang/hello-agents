@@ -1,0 +1,58 @@
+[
+  {
+    "question": "What problem does Atlas Assistant solve?",
+    "expected_answer": "Atlas Assistant provides grounded answers with citations from local documents.",
+    "expected_sources": ["01_overview.md"],
+    "tags": ["overview"],
+    "kb_id": "1ae58ed620844c6ebb6552b4b05e1299"
+  },
+  {
+    "question": "Which vector store does Atlas use for retrieval?",
+    "expected_answer": "Qdrant",
+    "expected_sources": ["02_architecture.md"],
+    "tags": ["architecture", "retrieval"],
+    "kb_id": "1ae58ed620844c6ebb6552b4b05e1299"
+  },
+  {
+    "question": "Where is long-term memory stored?",
+    "expected_answer": "SQLite",
+    "expected_sources": ["02_architecture.md"],
+    "tags": ["architecture", "memory"],
+    "kb_id": "1ae58ed620844c6ebb6552b4b05e1299"
+  },
+  {
+    "question": "What release introduced the citation response format?",
+    "expected_answer": "0.3.0",
+    "expected_sources": ["04_release_notes.md"],
+    "tags": ["changelog"],
+    "kb_id": "1ae58ed620844c6ebb6552b4b05e1299"
+  },
+  {
+    "question": "Which environment variable controls the public API base URL?",
+    "expected_answer": "ATLAS_PUBLIC_API_BASE_URL",
+    "expected_sources": ["03_operations.md"],
+    "tags": ["configuration"],
+    "kb_id": "1ae58ed620844c6ebb6552b4b05e1299"
+  },
+  {
+    "question": "Who is the CEO of Atlas?",
+    "expected_answer": "",
+    "expected_sources": [],
+    "tags": ["refusal"],
+    "kb_id": "1ae58ed620844c6ebb6552b4b05e1299"
+  },
+  {
+    "question": "What is the exact revenue target for next year?",
+    "expected_answer": "",
+    "expected_sources": [],
+    "tags": ["refusal"],
+    "kb_id": "1ae58ed620844c6ebb6552b4b05e1299"
+  },
+  {
+    "question": "Which GPU model is required in production?",
+    "expected_answer": "",
+    "expected_sources": [],
+    "tags": ["refusal"],
+    "kb_id": "1ae58ed620844c6ebb6552b4b05e1299"
+  }
+]
