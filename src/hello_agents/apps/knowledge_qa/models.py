@@ -22,16 +22,31 @@ class KnowledgeBaseStatus(StrEnum):
 
 
 @dataclass(slots=True, frozen=True)
+class KnowledgeDocument:
+    """Describe one document managed under a knowledge base."""
+
+    document_id: str
+    name: str
+    source_path: str
+    chunk_count: int = 0
+    size_bytes: int = 0
+    created_at: str = field(default_factory=utc_now_iso)
+    updated_at: str = field(default_factory=utc_now_iso)
+
+
+@dataclass(slots=True, frozen=True)
 class KnowledgeBase:
     """Describe one knowledge base and its indexed sources."""
 
     kb_id: str
     name: str
     description: str = ""
+    documents: tuple[KnowledgeDocument, ...] = ()
     source_paths: tuple[str, ...] = ()
     status: KnowledgeBaseStatus = KnowledgeBaseStatus.READY
     document_count: int = 0
     chunk_count: int = 0
+    uses_scoped_index: bool = False
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
 
@@ -87,8 +102,19 @@ class RunTrace:
     trace_id: str
     question: str
     rewritten_query: str
+    normalized_question: str = ""
+    input_check: dict[str, object] | None = None
+    question_type: str = ""
+    classification_reason: str = ""
+    plan_summary: str = ""
+    plan: dict[str, object] | None = None
     retrieved_chunks: tuple[RetrievedChunk, ...] = ()
     selected_chunks: tuple[RetrievedChunk, ...] = ()
+    retrieval_rounds: tuple[dict[str, object], ...] = ()
+    inspection_result: dict[str, object] | None = None
+    citation_validation: dict[str, object] | None = None
+    evidence_score: float = 0.0
+    failure_mode: str | None = None
     rendered_prompt: str = ""
     answer: str = ""
     citations: tuple[Citation, ...] = ()

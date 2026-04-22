@@ -31,11 +31,17 @@ class RagRetriever:
 
         return self._config
 
-    def query(self, text: str, *, top_k: int | None = None) -> list[RagChunk]:
+    def query(
+        self,
+        text: str,
+        *,
+        top_k: int | None = None,
+        kb_id: str | None = None,
+    ) -> list[RagChunk]:
         """Return the top-k chunks relevant to the query."""
 
         if not text.strip():
             return []
         top_k = top_k or self._config.top_k
         embedding = self._embedder.embed_texts([text])[0]
-        return self._store.search_hybrid(text, embedding, top_k=top_k)
+        return self._store.search_hybrid(text, embedding, top_k=top_k, kb_id=kb_id)

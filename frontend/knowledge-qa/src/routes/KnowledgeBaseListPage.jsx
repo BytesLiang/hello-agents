@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -6,6 +6,15 @@ import {
   listKnowledgeBases,
   uploadKnowledgeBase,
 } from "../api";
+import { STATUS_LABELS, formatDate } from "../i18n";
+import {
+  EmptyState,
+  ErrorMessage,
+  LoadingIndicator,
+  MetricChip,
+  StatusPill,
+  SuccessMessage,
+} from "../components";
 import { isTauriRuntime, pickDesktopDocuments } from "../runtime";
 
 const EMPTY_FORM = {
@@ -13,12 +22,7 @@ const EMPTY_FORM = {
   description: "",
 };
 
-function formatDate(value) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
+const ACCEPT_EXTENSIONS = ".md,.markdown,.txt,.rst,.json,.yaml,.yml,.html,.htm,.pdf";
 
 export function KnowledgeBaseListPage() {
   const [knowledgeBases, setKnowledgeBases] = useState([]);
@@ -60,20 +64,24 @@ export function KnowledgeBaseListPage() {
     };
   }, []);
 
+  const updateFormField = useCallback((field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  }, []);
+
   async function handleSubmit(event) {
     event.preventDefault();
     if (!form.name.trim()) {
-      setError("Provide a knowledge base name.");
+      setError("请输入知识库名称。");
       setSuccessMessage("");
       return;
     }
     if (desktopMode && selectedPaths.length === 0) {
-      setError("Choose at least one local document path.");
+      setError("请至少选择一个本地文档路径。");
       setSuccessMessage("");
       return;
     }
     if (!desktopMode && selectedFiles.length === 0) {
-      setError("Choose at least one local document.");
+      setError("请至少选择一个本地文档。");
       setSuccessMessage("");
       return;
     }
@@ -99,7 +107,7 @@ export function KnowledgeBaseListPage() {
       setSelectedFiles([]);
       setSelectedPaths([]);
       setFileInputKey((current) => current + 1);
-      setSuccessMessage(`Imported ${created.name} successfully.`);
+      setSuccessMessage(`知识库「${created.name}」导入成功。`);
     } catch (submitError) {
       setError(submitError.message);
     } finally {
@@ -109,96 +117,97 @@ export function KnowledgeBaseListPage() {
 
   async function handleChooseDesktopDocuments() {
     setError("");
-    const paths = await pickDesktopDocuments();
-    setSelectedPaths(paths);
+    try {
+      const paths = await pickDesktopDocuments();
+      setSelectedPaths(paths);
+    } catch (pickError) {
+      setError(
+        pickError instanceof Error
+          ? pickError.message
+          : "无法打开本地文件选择器。"
+      );
+    }
   }
 
   return (
-    <main className="page-shell">
-      <section className="hero-panel">
-        <div className="eyebrow">Knowledge QA Console</div>
-        <h1>Turn the MVP into an operator-friendly knowledge workspace.</h1>
+    <main className="page-shell" id="main-content">
+      <section className="hero-panel" aria-labelledby="hero-title">
+        <h1 id="hero-title">知识库问答控制台</h1>
         <p className="hero-copy">
-          {desktopMode
-            ? "Manage knowledge bases with native file selection and ingest documents directly from your machine."
-            : "Manage knowledge bases, upload local documents from your machine, and move straight into evidence-backed QA once indexing completes."}
+          导入本地文档建立知识库，即可进行智能问答。
         </p>
       </section>
 
-      <section className="layout-grid">
-        <article className="panel panel-form">
+      <section className="layout-grid" aria-label="知识库管理区域">
+        <article className="panel panel-form" aria-labelledby="create-heading">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Ingest</p>
-              <h2>Create Knowledge Base</h2>
+              <p className="eyebrow">导入</p>
+              <h2 id="create-heading">创建知识库</h2>
             </div>
-            <span className="status-pill status-pending">Sync import</span>
+            <span className="status-pill status-pending">同步导入</span>
           </div>
 
-          <form className="stack" onSubmit={handleSubmit}>
-            <label className="field">
-              <span>Name</span>
+          <form className="stack" onSubmit={handleSubmit} noValidate>
+            <label className="field" htmlFor="kb-name">
+              <span>名称</span>
               <input
+                id="kb-name"
                 name="name"
-                placeholder="Atlas Docs"
+                placeholder="项目文档库"
+                required
                 value={form.name}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
+                onChange={(event) => updateFormField("name", event.target.value)}
               />
             </label>
 
-            <label className="field">
-              <span>Description</span>
+            <label className="field" htmlFor="kb-description">
+              <span>描述</span>
               <input
+                id="kb-description"
                 name="description"
-                placeholder="Product and engineering knowledge"
+                placeholder="产品与工程知识库"
                 value={form.description}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
+                onChange={(event) => updateFormField("description", event.target.value)}
               />
             </label>
 
             {desktopMode ? (
               <>
                 <div className="field">
-                  <span>Local Documents</span>
+                  <span id="kb-docs-label">本地文档</span>
                   <button
+                    aria-labelledby="kb-docs-label"
                     className="secondary-button"
                     onClick={handleChooseDesktopDocuments}
                     type="button"
                   >
-                    Choose Documents
+                    选择文档
                   </button>
                 </div>
 
                 {selectedPaths.length ? (
-                  <div className="file-list" aria-label="Selected paths">
+                  <ul className="file-list" aria-label="已选路径">
                     {selectedPaths.map((path) => (
-                      <span className="file-chip" key={path}>
+                      <li className="file-chip" key={path}>
                         {path}
-                      </span>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 ) : (
                   <p className="message muted-message compact-message">
-                    Choose one or more local files using the native desktop dialog.
+                    点击上方按钮选择本地文件。
                   </p>
                 )}
               </>
             ) : (
               <>
-                <label className="field">
-                  <span>Local Documents</span>
+                <label className="field" htmlFor="kb-files">
+                  <span>本地文档</span>
                   <input
+                    id="kb-files"
                     key={fileInputKey}
+                    accept={ACCEPT_EXTENSIONS}
                     multiple
                     name="files"
                     type="file"
@@ -209,87 +218,88 @@ export function KnowledgeBaseListPage() {
                 </label>
 
                 {selectedFiles.length ? (
-                  <div className="file-list" aria-label="Selected files">
+                  <ul className="file-list" aria-label="已选文件">
                     {selectedFiles.map((file) => (
-                      <span className="file-chip" key={`${file.name}-${file.size}`}>
+                      <li className="file-chip" key={`${file.name}-${file.size}`}>
                         {file.name}
-                      </span>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 ) : (
                   <p className="message muted-message compact-message">
-                    Choose one or more local files to ingest.
+                    选择一个或多个本地文件进行导入。
                   </p>
                 )}
               </>
             )}
 
-            {desktopMode ? (
-              <p className="message muted-message compact-message">
-                Desktop mode reads local file paths directly and expects the local
-                Python API to be running on `127.0.0.1:8000`.
-              </p>
-            ) : null}
 
-            <button className="primary-button" disabled={submitting} type="submit">
-              {submitting ? "Importing..." : "Create Knowledge Base"}
+            <button
+              aria-busy={submitting}
+              className="primary-button"
+              disabled={submitting}
+              type="submit"
+            >
+              {submitting ? "导入中…" : "创建知识库"}
             </button>
           </form>
 
-          {error ? <p className="message error-message">{error}</p> : null}
-          {successMessage ? (
-            <p className="message success-message">{successMessage}</p>
-          ) : null}
+          <ErrorMessage>{error}</ErrorMessage>
+          <SuccessMessage>{successMessage}</SuccessMessage>
         </article>
 
-        <article className="panel panel-list">
+        <article className="panel panel-list" aria-labelledby="list-heading">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Inventory</p>
-              <h2>Knowledge Bases</h2>
+              <p className="eyebrow">清单</p>
+              <h2 id="list-heading">知识库列表</h2>
             </div>
-            <span className="metric-chip">{knowledgeBases.length} total</span>
+            <MetricChip>共 {knowledgeBases.length} 个</MetricChip>
           </div>
 
-          {loading ? <p className="message muted-message">Loading knowledge bases...</p> : null}
-
-          {!loading && !error && knowledgeBases.length === 0 ? (
-            <p className="message muted-message">
-              No knowledge bases yet. Start by ingesting one on the left.
-            </p>
+          {loading ? (
+            <LoadingIndicator text="正在加载知识库..." />
           ) : null}
 
-          <div className="card-list">
+          {!loading && !error && knowledgeBases.length === 0 ? (
+            <EmptyState>
+              <p className="message muted-message">
+                暂无知识库，请在左侧创建并导入。
+              </p>
+            </EmptyState>
+          ) : null}
+
+          <div className="card-list" role="list">
             {knowledgeBases.map((knowledgeBase) => (
-              <Link
-                className="kb-card"
-                key={knowledgeBase.kb_id}
-                to={`/knowledge-bases/${knowledgeBase.kb_id}`}
-              >
+              <div key={knowledgeBase.kb_id} role="listitem">
+                <Link
+                  aria-label={`${knowledgeBase.name} — ${knowledgeBase.description || "暂无描述"}`}
+                  className="kb-card"
+                  to={`/knowledge-bases/${knowledgeBase.kb_id}`}
+                >
                 <div className="kb-card-header">
                   <div>
                     <h3>{knowledgeBase.name}</h3>
-                    <p>{knowledgeBase.description || "No description provided."}</p>
+                    <p>{knowledgeBase.description || "暂无描述"}</p>
                   </div>
-                  <span className={`status-pill status-${knowledgeBase.status}`}>
-                    {knowledgeBase.status}
-                  </span>
+                  <StatusPill status={STATUS_LABELS[knowledgeBase.status] || knowledgeBase.status} />
                 </div>
                 <dl className="stat-grid">
                   <div>
-                    <dt>Documents</dt>
+                    <dt>文档数</dt>
                     <dd>{knowledgeBase.document_count}</dd>
                   </div>
                   <div>
-                    <dt>Chunks</dt>
+                    <dt>分块数</dt>
                     <dd>{knowledgeBase.chunk_count}</dd>
                   </div>
                 </dl>
                 <div className="card-footer">
                   <span>{formatDate(knowledgeBase.updated_at)}</span>
-                  <span>Open workspace</span>
+                  <span aria-hidden="true">进入工作区 →</span>
                 </div>
               </Link>
+              </div>
             ))}
           </div>
         </article>

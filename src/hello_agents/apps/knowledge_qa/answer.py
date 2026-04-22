@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from hello_agents.apps.knowledge_qa.models import Citation, RetrievedChunk
+from hello_agents.apps.knowledge_qa.llm_utils import (
+    SupportsChat,
+    load_json_object,
+    token_usage_from_response,
+)
+from hello_agents.apps.knowledge_qa.models import Citation, RetrievedChunk, TokenUsage
 from hello_agents.llm.types import LLMMessage
 
 KNOWLEDGE_QA_SYSTEM_PROMPT = (
     "You answer questions using only the supplied knowledge base excerpts. "
     "Return valid JSON only. "
     "Do not wrap the JSON in Markdown or add extra text."
+)
+_CITATION_VALIDATION_SYSTEM_PROMPT = (
+    "You verify whether an answer is fully supported by the provided evidence and "
+    "whether the cited items are appropriate. Return valid JSON only."
 )
 
 
@@ -27,9 +35,24 @@ class ParsedAnswer:
     used_structured_output: bool = False
 
 
+@dataclass(slots=True, frozen=True)
+class CitationValidationResult:
+    """Represent the outcome of answer and citation validation."""
+
+    is_valid: bool
+    reason: str | None = None
+    citation_indices: tuple[int, ...] = ()
+    answered: bool | None = None
+    used_llm: bool = False
+    token_usage: TokenUsage = TokenUsage()
+
+
 def build_answer_messages(
     question: str,
     chunks: Sequence[RetrievedChunk],
+    *,
+    inspection_summary: str | None = None,
+    validation_feedback: str | None = None,
 ) -> list[LLMMessage]:
     """Build the LLM messages used for knowledge QA answering."""
 
@@ -37,7 +60,12 @@ def build_answer_messages(
         LLMMessage(role="system", content=KNOWLEDGE_QA_SYSTEM_PROMPT),
         LLMMessage(
             role="user",
-            content=_build_user_prompt(question, chunks),
+            content=_build_user_prompt(
+                question,
+                chunks,
+                inspection_summary=inspection_summary,
+                validation_feedback=validation_feedback,
+            ),
         ),
     ]
 
@@ -83,7 +111,7 @@ def parse_answer_response(
             reason="empty_answer",
         )
 
-    payload = _load_json_object(normalized)
+    payload = load_json_object(normalized)
     if payload is None:
         return ParsedAnswer(
             answer=normalized,
@@ -117,7 +145,76 @@ def parse_answer_response(
     )
 
 
-def _build_user_prompt(question: str, chunks: Sequence[RetrievedChunk]) -> str:
+def validate_citations(
+    *,
+    question: str,
+    parsed_answer: ParsedAnswer,
+    chunks: Sequence[RetrievedChunk],
+    inspection_summary: str | None = None,
+    llm: SupportsChat | None = None,
+) -> CitationValidationResult:
+    """Validate whether the answer and citations are grounded in evidence."""
+
+    deterministic = _validate_citations_deterministically(
+        parsed_answer=parsed_answer,
+        chunks=chunks,
+        inspection_summary=inspection_summary,
+    )
+    if not deterministic.is_valid or llm is None or not parsed_answer.answered:
+        return deterministic
+
+    response = llm.chat(
+        [
+            LLMMessage(role="system", content=_CITATION_VALIDATION_SYSTEM_PROMPT),
+            LLMMessage(
+                role="user",
+                content=_build_validation_prompt(
+                    question=question,
+                    parsed_answer=parsed_answer,
+                    chunks=chunks,
+                    inspection_summary=inspection_summary,
+                ),
+            ),
+        ],
+        temperature=0,
+        max_tokens=180,
+    )
+    payload = load_json_object(response.content)
+    if payload is None:
+        return deterministic
+
+    raw_is_valid = payload.get("is_valid")
+    raw_reason = payload.get("reason")
+    raw_answered = payload.get("answered")
+    citation_indices = _normalize_citation_indices(
+        payload.get("citation_indices"),
+        max_citation_index=len(chunks),
+    )
+    return CitationValidationResult(
+        is_valid=(
+            raw_is_valid if isinstance(raw_is_valid, bool) else deterministic.is_valid
+        ),
+        reason=(
+            raw_reason
+            if isinstance(raw_reason, str) and raw_reason
+            else deterministic.reason
+        ),
+        citation_indices=citation_indices or deterministic.citation_indices,
+        answered=(
+            raw_answered if isinstance(raw_answered, bool) else deterministic.answered
+        ),
+        used_llm=True,
+        token_usage=token_usage_from_response(response),
+    )
+
+
+def _build_user_prompt(
+    question: str,
+    chunks: Sequence[RetrievedChunk],
+    *,
+    inspection_summary: str | None,
+    validation_feedback: str | None,
+) -> str:
     """Render the final user prompt for the knowledge QA generation step."""
 
     context_lines: list[str] = []
@@ -128,9 +225,20 @@ def _build_user_prompt(question: str, chunks: Sequence[RetrievedChunk]) -> str:
         )
 
     rendered_context = "\n\n".join(context_lines) if context_lines else "No context."
+    rendered_analysis = (
+        f"\n\nDocument analysis:\n{inspection_summary.strip()}"
+        if inspection_summary and inspection_summary.strip()
+        else ""
+    )
+    rendered_feedback = (
+        f"\n\nValidation feedback:\n{validation_feedback.strip()}"
+        if validation_feedback and validation_feedback.strip()
+        else ""
+    )
     return (
         "Answer the question using the context below.\n"
-        "If the context is insufficient, explicitly say so.\n"
+        "Use the retrieved excerpts and any document analysis provided below.\n"
+        "If the evidence is insufficient, explicitly say so.\n"
         "Return JSON with the exact shape:\n"
         "{\n"
         '  "answer": "string",\n'
@@ -140,11 +248,14 @@ def _build_user_prompt(question: str, chunks: Sequence[RetrievedChunk]) -> str:
         "}\n"
         "Rules:\n"
         "- citation_indices must reference the numbered context items.\n"
+        "- citation_indices may be [] when the answer relies only on "
+        "document analysis.\n"
         "- If evidence is insufficient, set answered to false.\n"
         '- If answered is false, reason should be "insufficient_evidence" or a '
-        "short explanation.\n\n"
+        "short explanation.\n"
+        "- Keep the answer concise and grounded in the cited evidence.\n\n"
         f"Question:\n{question.strip()}\n\n"
-        f"Context:\n{rendered_context}"
+        f"Context:\n{rendered_context}{rendered_analysis}{rendered_feedback}"
     )
 
 
@@ -171,24 +282,6 @@ def _select_citation_chunks(
         if len(selected_chunks) >= limit:
             break
     return tuple(selected_chunks)
-
-
-def _load_json_object(content: str) -> dict[str, object] | None:
-    """Load a JSON object from plain or fenced model output."""
-
-    candidate = content.strip()
-    if candidate.startswith("```"):
-        lines = candidate.splitlines()
-        if len(lines) >= 3:
-            candidate = "\n".join(lines[1:-1]).strip()
-
-    try:
-        parsed = json.loads(candidate)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    return parsed
 
 
 def _normalize_citation_indices(
@@ -220,3 +313,96 @@ def _truncate_snippet(content: str, *, limit: int = 240) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[:limit].rstrip() + "..."
+
+
+def _validate_citations_deterministically(
+    *,
+    parsed_answer: ParsedAnswer,
+    chunks: Sequence[RetrievedChunk],
+    inspection_summary: str | None,
+) -> CitationValidationResult:
+    """Apply deterministic grounding checks before optional LLM review."""
+
+    if not parsed_answer.answered:
+        return CitationValidationResult(
+            is_valid=True,
+            reason=parsed_answer.reason,
+            citation_indices=parsed_answer.citation_indices,
+            answered=False,
+        )
+
+    if parsed_answer.citation_indices:
+        return CitationValidationResult(
+            is_valid=True,
+            citation_indices=parsed_answer.citation_indices,
+            answered=True,
+        )
+
+    if inspection_summary and inspection_summary.strip():
+        return CitationValidationResult(
+            is_valid=True,
+            reason="Answer relies on document inspection output.",
+            citation_indices=(),
+            answered=True,
+        )
+
+    if not chunks:
+        return CitationValidationResult(
+            is_valid=False,
+            reason="missing_evidence",
+            citation_indices=(),
+            answered=False,
+        )
+
+    return CitationValidationResult(
+        is_valid=False,
+        reason="missing_citations",
+        citation_indices=(),
+        answered=True,
+    )
+
+
+def _render_validation_context(
+    chunks: Sequence[RetrievedChunk],
+    *,
+    inspection_summary: str | None,
+) -> str:
+    """Render the evidence bundle for citation validation."""
+
+    parts: list[str] = []
+    for index, chunk in enumerate(chunks, start=1):
+        heading = f" ({chunk.heading_path})" if chunk.heading_path else ""
+        parts.append(f"[{index}] {chunk.source}{heading}\n{chunk.content.strip()}")
+    if inspection_summary and inspection_summary.strip():
+        parts.append(f"Document analysis:\n{inspection_summary.strip()}")
+    return "\n\n".join(parts) if parts else "No evidence."
+
+
+def _build_validation_prompt(
+    *,
+    question: str,
+    parsed_answer: ParsedAnswer,
+    chunks: Sequence[RetrievedChunk],
+    inspection_summary: str | None,
+) -> str:
+    """Render the citation validation prompt."""
+
+    evidence = _render_validation_context(
+        chunks,
+        inspection_summary=inspection_summary,
+    )
+    return (
+        "Validate whether the answer is fully supported by the cited evidence.\n"
+        "Return JSON with this exact shape:\n"
+        "{\n"
+        '  "is_valid": true,\n'
+        '  "reason": null,\n'
+        '  "citation_indices": [1],\n'
+        '  "answered": true\n'
+        "}\n\n"
+        f"Question:\n{question.strip()}\n\n"
+        f"Answer:\n{parsed_answer.answer}\n\n"
+        "Citation indices from the answer:\n"
+        f"{list(parsed_answer.citation_indices)}\n\n"
+        f"Evidence:\n{evidence}"
+    )

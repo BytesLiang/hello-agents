@@ -55,6 +55,6 @@ export async function waitForDesktopBackend() {
     }
   }
   throw new Error(
-    "The local Python API did not become ready in time. Check .hello_agents/logs/knowledge_qa_desktop_backend.log, then verify your Python environment, Qdrant, and .env configuration."
+    "本地 Python API 未能在规定时间内就绪。请检查 .hello_agents/logs/knowledge_qa_desktop_backend.log 日志，并确认 Python 环境、Qdrant 服务和 .env 配置是否正确。"
   );
 }

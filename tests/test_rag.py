@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
+from io import StringIO
 from pathlib import Path
 
 from hello_agents.agent import Agent
@@ -49,10 +51,16 @@ class StubRagStore:
         self._chunks.extend(chunks)
         self._embeddings.extend([list(vector) for vector in embeddings])
 
-    def search(self, embedding: Sequence[float], *, top_k: int) -> list[RagChunk]:
+    def search(
+        self,
+        embedding: Sequence[float],
+        *,
+        top_k: int,
+        kb_id: str | None = None,
+    ) -> list[RagChunk]:
         """Return the first top-k chunks for simplicity."""
 
-        del embedding
+        del embedding, kb_id
         return list(self._chunks[:top_k])
 
     def search_hybrid(
@@ -61,10 +69,11 @@ class StubRagStore:
         embedding: Sequence[float],
         *,
         top_k: int,
+        kb_id: str | None = None,
     ) -> list[RagChunk]:
         """Return the first top-k chunks for hybrid retrieval tests."""
 
-        del text, embedding
+        del text, embedding, kb_id
         return list(self._chunks[:top_k])
 
 
@@ -361,3 +370,58 @@ def test_upsert_uses_configured_batch_size() -> None:
             qdrant_store_module.models.PointStruct = original_point_struct  # type: ignore[attr-defined]
 
     assert calls == [2, 1]
+
+
+def test_upsert_logs_underlying_qdrant_failure() -> None:
+    """Verify Qdrant upsert errors are logged with contextual details."""
+
+    original_point_struct = qdrant_store_module.models.__dict__.get("PointStruct")
+    qdrant_store_module.models.PointStruct = lambda **kwargs: kwargs  # type: ignore[attr-defined]
+
+    class StubClient:
+        """Raise a deterministic Qdrant failure."""
+
+        def upsert(
+            self,
+            *,
+            collection_name: str,
+            points: Sequence[object],
+            wait: bool,
+            timeout: int,
+        ) -> None:
+            del collection_name, points, wait, timeout
+            raise ValueError("socket timed out")
+
+    store = RagQdrantStore.__new__(RagQdrantStore)
+    store._config = RagConfig(  # type: ignore[attr-defined]
+        enabled=True,
+        qdrant_url="http://localhost:6333",
+        qdrant_upsert_batch_size=64,
+        embed=None,
+    )
+    store._client = StubClient()  # type: ignore[attr-defined]
+    store._vector_size = 3  # type: ignore[attr-defined]
+
+    chunks = [RagChunk(id="1", source="a.md", content="A")]
+    embeddings = [[0.1, 0.0, 0.0]]
+    stream = StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setLevel(logging.ERROR)
+    logger = logging.getLogger("hello_agents")
+    logger.addHandler(handler)
+
+    try:
+        try:
+            store.upsert(chunks, embeddings)
+        except RuntimeError:
+            pass
+    finally:
+        logger.removeHandler(handler)
+        if original_point_struct is None:
+            delattr(qdrant_store_module.models, "PointStruct")
+        else:
+            qdrant_store_module.models.PointStruct = original_point_struct  # type: ignore[attr-defined]
+
+    assert "Qdrant upsert failed." in stream.getvalue()
+    assert "error_type=ValueError" in stream.getvalue()
+    assert "Traceback" in stream.getvalue()

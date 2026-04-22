@@ -1,3 +1,5 @@
+import { open } from "@tauri-apps/plugin-dialog";
+
 export function isTauriRuntime() {
   if (typeof window === "undefined") {
     return false;
@@ -20,8 +22,6 @@ export function resolveApiBaseUrl() {
 }
 
 export async function pickDesktopDocuments() {
-  const pluginName = "@tauri-apps/plugin-dialog";
-  const { open } = await import(/* @vite-ignore */ pluginName);
   const selected = await open({
     multiple: true,
     directory: false,

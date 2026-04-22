@@ -8,6 +8,7 @@ from hello_agents.apps.knowledge_qa.models import (
     AnswerResult,
     Citation,
     KnowledgeBase,
+    KnowledgeDocument,
     RetrievedChunk,
     RunTrace,
     TokenUsage,
@@ -55,6 +56,12 @@ class AskKnowledgeBaseRequest(BaseModel):
     """Represent one knowledge-base question."""
 
     question: str
+
+
+class AddKnowledgeBaseDocumentsRequest(BaseModel):
+    """Represent a request to add documents to one knowledge base."""
+
+    paths: list[str]
 
 
 class CitationResponse(BaseModel):
@@ -121,12 +128,39 @@ class RetrievedChunkResponse(BaseModel):
         )
 
 
+class KnowledgeDocumentResponse(BaseModel):
+    """Represent one managed knowledge-base document."""
+
+    document_id: str
+    name: str
+    source_path: str
+    chunk_count: int
+    size_bytes: int
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_domain(cls, document: KnowledgeDocument) -> KnowledgeDocumentResponse:
+        """Build a response schema from one domain document."""
+
+        return cls(
+            document_id=document.document_id,
+            name=document.name,
+            source_path=document.source_path,
+            chunk_count=document.chunk_count,
+            size_bytes=document.size_bytes,
+            created_at=document.created_at,
+            updated_at=document.updated_at,
+        )
+
+
 class KnowledgeBaseResponse(BaseModel):
     """Represent one knowledge base for HTTP responses."""
 
     kb_id: str
     name: str
     description: str
+    documents: list[KnowledgeDocumentResponse]
     source_paths: list[str]
     status: str
     document_count: int
@@ -142,6 +176,10 @@ class KnowledgeBaseResponse(BaseModel):
             kb_id=knowledge_base.kb_id,
             name=knowledge_base.name,
             description=knowledge_base.description,
+            documents=[
+                KnowledgeDocumentResponse.from_domain(document)
+                for document in knowledge_base.documents
+            ],
             source_paths=list(knowledge_base.source_paths),
             status=knowledge_base.status.value,
             document_count=knowledge_base.document_count,
@@ -182,9 +220,20 @@ class RunTraceResponse(BaseModel):
 
     trace_id: str
     question: str
+    normalized_question: str
     rewritten_query: str
+    input_check: dict[str, object] | None = None
+    question_type: str
+    classification_reason: str
+    plan_summary: str
+    plan: dict[str, object] | None = None
     retrieved_chunks: list[RetrievedChunkResponse]
     selected_chunks: list[RetrievedChunkResponse]
+    retrieval_rounds: list[dict[str, object]]
+    inspection_result: dict[str, object] | None = None
+    citation_validation: dict[str, object] | None = None
+    evidence_score: float
+    failure_mode: str | None = None
     rendered_prompt: str
     answer: str
     citations: list[CitationResponse]
@@ -201,7 +250,13 @@ class RunTraceResponse(BaseModel):
         return cls(
             trace_id=trace.trace_id,
             question=trace.question,
+            normalized_question=trace.normalized_question,
             rewritten_query=trace.rewritten_query,
+            input_check=trace.input_check,
+            question_type=trace.question_type,
+            classification_reason=trace.classification_reason,
+            plan_summary=trace.plan_summary,
+            plan=trace.plan,
             retrieved_chunks=[
                 RetrievedChunkResponse.from_domain(chunk)
                 for chunk in trace.retrieved_chunks
@@ -210,6 +265,11 @@ class RunTraceResponse(BaseModel):
                 RetrievedChunkResponse.from_domain(chunk)
                 for chunk in trace.selected_chunks
             ],
+            retrieval_rounds=list(trace.retrieval_rounds),
+            inspection_result=trace.inspection_result,
+            citation_validation=trace.citation_validation,
+            evidence_score=trace.evidence_score,
+            failure_mode=trace.failure_mode,
             rendered_prompt=trace.rendered_prompt,
             answer=trace.answer,
             citations=[

@@ -9,6 +9,7 @@ from pathlib import Path
 from hello_agents.apps.knowledge_qa.models import (
     KnowledgeBase,
     KnowledgeBaseStatus,
+    KnowledgeDocument,
     utc_now_iso,
 )
 
@@ -95,14 +96,32 @@ class JsonKnowledgeBaseStore:
 def _knowledge_base_to_dict(knowledge_base: KnowledgeBase) -> dict[str, object]:
     """Serialize one knowledge base to a JSON-compatible dictionary."""
 
+    normalized_source_paths = (
+        tuple(document.source_path for document in knowledge_base.documents)
+        if knowledge_base.documents
+        else knowledge_base.source_paths
+    )
     return {
         "kb_id": knowledge_base.kb_id,
         "name": knowledge_base.name,
         "description": knowledge_base.description,
-        "source_paths": list(knowledge_base.source_paths),
+        "documents": [
+            _knowledge_document_to_dict(document)
+            for document in knowledge_base.documents
+        ],
+        "source_paths": list(normalized_source_paths),
         "status": knowledge_base.status.value,
-        "document_count": knowledge_base.document_count,
-        "chunk_count": knowledge_base.chunk_count,
+        "document_count": (
+            len(knowledge_base.documents)
+            if knowledge_base.documents
+            else knowledge_base.document_count
+        ),
+        "chunk_count": (
+            sum(document.chunk_count for document in knowledge_base.documents)
+            if knowledge_base.documents
+            else knowledge_base.chunk_count
+        ),
+        "uses_scoped_index": knowledge_base.uses_scoped_index,
         "created_at": knowledge_base.created_at,
         "updated_at": knowledge_base.updated_at,
     }
@@ -112,21 +131,104 @@ def _knowledge_base_from_dict(payload: dict[str, object]) -> KnowledgeBase:
     """Deserialize one knowledge base from a JSON payload."""
 
     status = payload.get("status", KnowledgeBaseStatus.READY.value)
+    documents = payload.get("documents", ())
+    normalized_documents: tuple[KnowledgeDocument, ...] = ()
+    if isinstance(documents, list):
+        normalized_documents = tuple(
+            _knowledge_document_from_dict(item)
+            for item in documents
+            if isinstance(item, dict)
+        )
     source_paths = payload.get("source_paths", ())
-    normalized_source_paths: tuple[str, ...] = ()
-    if isinstance(source_paths, list):
-        normalized_source_paths = tuple(str(item) for item in source_paths)
+    normalized_source_paths = _normalize_source_paths(
+        source_paths,
+        documents=normalized_documents,
+    )
     return KnowledgeBase(
         kb_id=str(payload["kb_id"]),
         name=str(payload["name"]),
         description=str(payload.get("description", "")),
+        documents=normalized_documents,
         source_paths=normalized_source_paths,
         status=KnowledgeBaseStatus(str(status)),
-        document_count=_as_int(payload.get("document_count", 0)),
-        chunk_count=_as_int(payload.get("chunk_count", 0)),
+        document_count=_normalize_document_count(
+            payload.get("document_count", 0),
+            documents=normalized_documents,
+        ),
+        chunk_count=_normalize_chunk_count(
+            payload.get("chunk_count", 0),
+            documents=normalized_documents,
+        ),
+        uses_scoped_index=bool(payload.get("uses_scoped_index", False)),
         created_at=str(payload.get("created_at", utc_now_iso())),
         updated_at=str(payload.get("updated_at", utc_now_iso())),
     )
+
+
+def _knowledge_document_to_dict(document: KnowledgeDocument) -> dict[str, object]:
+    """Serialize one knowledge-base document to JSON-compatible data."""
+
+    return {
+        "document_id": document.document_id,
+        "name": document.name,
+        "source_path": document.source_path,
+        "chunk_count": document.chunk_count,
+        "size_bytes": document.size_bytes,
+        "created_at": document.created_at,
+        "updated_at": document.updated_at,
+    }
+
+
+def _knowledge_document_from_dict(payload: dict[str, object]) -> KnowledgeDocument:
+    """Deserialize one managed document from raw JSON data."""
+
+    return KnowledgeDocument(
+        document_id=str(payload["document_id"]),
+        name=str(payload.get("name") or Path(str(payload.get("source_path", ""))).name),
+        source_path=str(payload.get("source_path", "")),
+        chunk_count=_as_int(payload.get("chunk_count", 0)),
+        size_bytes=_as_int(payload.get("size_bytes", 0)),
+        created_at=str(payload.get("created_at", utc_now_iso())),
+        updated_at=str(payload.get("updated_at", utc_now_iso())),
+    )
+
+
+def _normalize_source_paths(
+    source_paths: object,
+    *,
+    documents: tuple[KnowledgeDocument, ...],
+) -> tuple[str, ...]:
+    """Return canonical source paths for one knowledge base."""
+
+    if documents:
+        return tuple(document.source_path for document in documents)
+    if isinstance(source_paths, list):
+        return tuple(str(item) for item in source_paths)
+    return ()
+
+
+def _normalize_document_count(
+    raw_count: object,
+    *,
+    documents: tuple[KnowledgeDocument, ...],
+) -> int:
+    """Return the persisted or derived document count."""
+
+    if documents:
+        return len(documents)
+    return _as_int(raw_count)
+
+
+def _normalize_chunk_count(
+    raw_count: object,
+    *,
+    documents: tuple[KnowledgeDocument, ...],
+) -> int:
+    """Return the persisted or derived chunk count."""
+
+    if documents:
+        return sum(document.chunk_count for document in documents)
+    return _as_int(raw_count)
 
 
 def _as_int(value: object) -> int:

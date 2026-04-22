@@ -13,6 +13,7 @@
   --warm: #d97706;
   --danger: #b42318;
   --shadow: 0 24px 60px rgba(24, 33, 38, 0.12);
+  --focus-ring: 0 0 0 3px rgba(15, 118, 110, 0.4);
 }
 
 * {
@@ -52,12 +53,60 @@ textarea {
   font: inherit;
 }
 
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 4px;
+}
+
 #root {
   position: relative;
 }
 
 code {
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 100;
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+  text-decoration: none;
+  transition: top 200ms ease;
+}
+
+.skip-link:focus {
+  top: 16px;
+}
+
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  color: var(--muted);
+  background: rgba(24, 33, 38, 0.05);
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(15, 118, 110, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 600ms linear infinite;
+}
+
+.empty-state {
+  padding: 4px 0;
 }
 
 .desktop-shell {
@@ -102,10 +151,32 @@ code {
   animation: rise-in 320ms ease-out both;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .hero-panel,
+  .panel,
+  .kb-card,
+  .trace-card {
+    animation: none;
+  }
+
+  .field input,
+  .field textarea,
+  .primary-button,
+  .secondary-button,
+  .kb-card {
+    transition: none;
+  }
+
+  .loading-spinner {
+    animation: none;
+    border-top-color: var(--accent);
+  }
+}
+
 .hero-panel {
-  padding: 32px;
+  padding: 20px 28px;
   border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 28px;
+  border-radius: 20px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.2)),
     var(--panel);
@@ -114,23 +185,22 @@ code {
 }
 
 .hero-panel h1 {
-  margin: 10px 0 14px;
-  max-width: 16ch;
-  font-size: clamp(2.2rem, 4vw, 4.6rem);
-  line-height: 0.96;
-  letter-spacing: -0.06em;
+  margin: 6px 0 10px;
+  max-width: none;
+  font-size: 1.5rem;
+  line-height: 1.3;
+  letter-spacing: -0.03em;
 }
 
 .hero-panel-compact h1 {
-  max-width: none;
-  font-size: clamp(2rem, 3vw, 3.2rem);
+  font-size: 1.35rem;
 }
 
 .hero-copy {
   max-width: 54rem;
   color: var(--muted);
-  font-size: 1.05rem;
-  line-height: 1.7;
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 .eyebrow {
@@ -205,6 +275,11 @@ code {
   outline: none;
   border-color: rgba(15, 118, 110, 0.6);
   transform: translateY(-1px);
+}
+
+.field input[aria-invalid="true"],
+.field textarea[aria-invalid="true"] {
+  border-color: var(--danger);
 }
 
 .primary-button {
@@ -293,18 +368,21 @@ code {
   background: rgba(217, 119, 6, 0.12);
 }
 
-.status-ready {
+.status-ready,
+.status-已回答 {
   color: var(--accent-strong);
   background: rgba(15, 118, 110, 0.12);
 }
 
 .status-indexing,
-.status-pending {
+.status-pending,
+.status-索引中 {
   color: #73420d;
   background: rgba(217, 119, 6, 0.12);
 }
 
-.status-failed {
+.status-failed,
+.status-已拒答 {
   color: var(--danger);
   background: rgba(180, 35, 24, 0.1);
 }
@@ -319,6 +397,9 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .file-chip {
@@ -441,6 +522,41 @@ code {
   padding-left: 18px;
 }
 
+.document-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.document-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid rgba(24, 33, 38, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.document-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.document-copy p,
+.document-copy span {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.document-copy span {
+  font-size: 0.9rem;
+}
+
 .answer-panel {
   margin-top: 18px;
   display: grid;
@@ -486,6 +602,12 @@ code {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

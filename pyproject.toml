@@ -13,6 +13,7 @@ authors = [
   { name = "Project Contributors" }
 ]
 dependencies = [
+  "dashscope",
   "fastapi>=0.115.0",
   "openai>=1.30.0",
   "pydantic>=2.8.0",

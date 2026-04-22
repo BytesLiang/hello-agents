@@ -25,19 +25,18 @@ export function AppRoutes() {
 
 function DesktopBootstrapScreen({ error }) {
   return (
-    <main className="desktop-shell">
+    <main className="desktop-shell" role="alert" aria-live="assertive">
       <section className="desktop-panel">
-        <p className="eyebrow">Desktop Runtime</p>
-        <h1>Preparing the local Knowledge QA workspace.</h1>
+        <p className="eyebrow">桌面运行时</p>
+        <h1>正在准备本地知识库问答工作区。</h1>
         <p className="hero-copy">
-          The desktop shell is checking or starting the local Python API before
-          the workspace opens.
+          桌面端正在检查或启动本地 Python API，工作区即将打开。
         </p>
         {error ? (
           <p className="message error-message">{error}</p>
         ) : (
           <p className="message muted-message">
-            Starting the local API on <code>127.0.0.1:8000</code>.
+            正在启动本地 API 服务 <code>127.0.0.1:8000</code>。
           </p>
         )}
       </section>
@@ -77,7 +76,7 @@ export default function App() {
           setError(
             startupError instanceof Error
               ? startupError.message
-              : "Failed to prepare the desktop backend."
+              : "桌面端后端启动失败。"
           );
         }
       }
@@ -99,6 +98,9 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <a href="#main-content" className="skip-link">
+        跳转到主要内容
+      </a>
       <AppRoutes />
     </BrowserRouter>
   );

@@ -53,38 +53,30 @@ class RagIndexer:
     def index_folder(self, path: Path, *, glob: str = "**/*") -> int:
         """Index all readable text files inside a folder."""
 
-        chunks: list[RagChunk] = []
+        indexed_chunks = 0
         for file_path in _iter_files(path, glob=glob):
-            text = self._read_text(file_path)
-            if not text:
-                continue
-            for index, chunk in enumerate(
-                _chunk_markdown(
-                    text,
-                    chunk_size=self._config.chunk_size,
-                    overlap=self._config.chunk_overlap,
-                )
-            ):
-                chunk_id = uuid4().hex
-                chunks.append(
-                    RagChunk(
-                        id=chunk_id,
-                        source=str(file_path),
-                        content=chunk["content"],
-                        metadata={
-                            "chunk_index": index,
-                            "path": str(file_path),
-                            "heading_path": chunk["heading_path"],
-                        },
-                    )
-                )
+            indexed_chunks += self.index_file(
+                file_path,
+                kb_id="",
+                document_id=uuid4().hex,
+            )
+        return indexed_chunks
 
+    def index_file(self, path: Path, *, kb_id: str, document_id: str) -> int:
+        """Index one document into the configured vector store."""
+
+        chunks = self._build_chunks(path, kb_id=kb_id, document_id=document_id)
         if not chunks:
             return 0
 
         embeddings = self._embedder.embed_texts([chunk.content for chunk in chunks])
         self._store.upsert(chunks, embeddings)
         return len(chunks)
+
+    def delete_document(self, *, kb_id: str, document_id: str) -> None:
+        """Delete one previously indexed document from the vector store."""
+
+        self._store.delete_document(kb_id=kb_id, document_id=document_id)
 
     def _read_text(self, path: Path) -> str:
         """Convert a file into Markdown text via MarkItDown."""
@@ -95,6 +87,44 @@ class RagIndexer:
             return ""
         text = getattr(result, "text_content", "")
         return text if isinstance(text, str) else ""
+
+    def _build_chunks(
+        self,
+        path: Path,
+        *,
+        kb_id: str,
+        document_id: str,
+    ) -> list[RagChunk]:
+        """Build chunk records for one document."""
+
+        text = self._read_text(path)
+        if not text:
+            return []
+
+        chunks: list[RagChunk] = []
+        for index, chunk in enumerate(
+            _chunk_markdown(
+                text,
+                chunk_size=self._config.chunk_size,
+                overlap=self._config.chunk_overlap,
+            )
+        ):
+            chunk_id = uuid4().hex
+            chunks.append(
+                RagChunk(
+                    id=chunk_id,
+                    source=str(path),
+                    content=chunk["content"],
+                    metadata={
+                        "chunk_index": index,
+                        "path": str(path),
+                        "heading_path": chunk["heading_path"],
+                        "kb_id": kb_id,
+                        "document_id": document_id,
+                    },
+                )
+            )
+        return chunks
 
 
 def _iter_files(path: Path, *, glob: str) -> Iterable[Path]:

@@ -21,8 +21,8 @@ class RagConfig:
     collection: str = "hello_agents_rag"
     qdrant_url: str | None = None
     qdrant_api_key: str | None = None
-    qdrant_timeout: float = 10.0
-    qdrant_upsert_batch_size: int = 64
+    qdrant_timeout: float = 30.0
+    qdrant_upsert_batch_size: int = 8
     qdrant_wait_for_upsert: bool = True
     recreate_collection_on_schema_mismatch: bool = False
     embed: EmbedConfig | None = field(default_factory=EmbedConfig.from_env)
@@ -39,8 +39,8 @@ class RagConfig:
         collection = os.getenv("RAG_COLLECTION", "hello_agents_rag")
         qdrant_url = os.getenv("QDRANT_URL")
         qdrant_api_key = os.getenv("QDRANT_API_KEY")
-        qdrant_timeout = float(os.getenv("QDRANT_TIMEOUT", "10"))
-        qdrant_upsert_batch_size = int(os.getenv("QDRANT_UPSERT_BATCH_SIZE", "64"))
+        qdrant_timeout = float(os.getenv("QDRANT_TIMEOUT", "30"))
+        qdrant_upsert_batch_size = int(os.getenv("QDRANT_UPSERT_BATCH_SIZE", "8"))
         qdrant_wait_for_upsert = os.getenv(
             "QDRANT_WAIT_FOR_UPSERT", "true"
         ).lower() in {"1", "true", "yes"}

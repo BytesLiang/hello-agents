@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from collections import Counter
 from collections.abc import Sequence
@@ -41,6 +42,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised in import-only paths
 
 QdrantClient: Any = _qdrant_client_cls
 models: Any = _qdrant_models
+logger = logging.getLogger(__name__)
 
 
 class RagQdrantStore:
@@ -91,6 +93,8 @@ class RagQdrantStore:
                         self._SPARSE_VECTOR_NAME: _text_to_sparse_vector(chunk.content),
                     },
                     payload={
+                        "kb_id": chunk.metadata.get("kb_id", ""),
+                        "document_id": chunk.metadata.get("document_id", ""),
                         "source": chunk.source,
                         "content": chunk.content,
                         "metadata": chunk.metadata,
@@ -110,6 +114,15 @@ class RagQdrantStore:
                     timeout=int(self._config.qdrant_timeout),
                 )
             except Exception as exc:
+                logger.exception(
+                    "Qdrant upsert failed. collection=%r batch_size=%d "
+                    "wait=%s timeout=%s error_type=%s",
+                    self._config.collection,
+                    len(points),
+                    self._config.qdrant_wait_for_upsert,
+                    self._config.qdrant_timeout,
+                    type(exc).__name__,
+                )
                 raise RuntimeError(
                     "Qdrant upsert failed. Consider lowering "
                     "QDRANT_UPSERT_BATCH_SIZE or increasing QDRANT_TIMEOUT. "
@@ -119,7 +132,13 @@ class RagQdrantStore:
                     f"timeout={self._config.qdrant_timeout}"
                 ) from exc
 
-    def search(self, embedding: Sequence[float], *, top_k: int) -> list[RagChunk]:
+    def search(
+        self,
+        embedding: Sequence[float],
+        *,
+        top_k: int,
+        kb_id: str | None = None,
+    ) -> list[RagChunk]:
         """Search for the top-k closest chunks."""
 
         # The retriever does not currently pass the raw query text, so hybrid
@@ -129,6 +148,7 @@ class RagQdrantStore:
             collection_name=self._config.collection,
             query=list(embedding),
             using=self._DENSE_VECTOR_NAME,
+            query_filter=_kb_filter(kb_id),
             limit=top_k,
             with_payload=True,
             with_vectors=False,
@@ -145,9 +165,11 @@ class RagQdrantStore:
         embedding: Sequence[float],
         *,
         top_k: int,
+        kb_id: str | None = None,
     ) -> list[RagChunk]:
         """Search with dense+sparse hybrid retrieval and RRF fusion."""
 
+        query_filter = _kb_filter(kb_id)
         response = self._client.query_points(
             collection_name=self._config.collection,
             prefetch=[
@@ -155,14 +177,17 @@ class RagQdrantStore:
                     query=list(embedding),
                     using=self._DENSE_VECTOR_NAME,
                     limit=max(top_k * 2, top_k),
+                    filter=query_filter,
                 ),
                 models.Prefetch(
                     query=_text_to_sparse_vector(text),
                     using=self._SPARSE_VECTOR_NAME,
                     limit=max(top_k * 2, top_k),
+                    filter=query_filter,
                 ),
             ],
             query=models.FusionQuery(fusion=models.Fusion.RRF),
+            query_filter=query_filter,
             limit=top_k,
             with_payload=True,
             with_vectors=False,
@@ -172,6 +197,29 @@ class RagQdrantStore:
             for point in response.points
             if isinstance(point.payload, dict)
         ]
+
+    def delete_document(self, *, kb_id: str, document_id: str) -> None:
+        """Delete one indexed document by knowledge-base and document id."""
+
+        self._client.delete(
+            collection_name=self._config.collection,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="kb_id",
+                            match=models.MatchValue(value=kb_id),
+                        ),
+                        models.FieldCondition(
+                            key="document_id",
+                            match=models.MatchValue(value=document_id),
+                        ),
+                    ]
+                )
+            ),
+            wait=self._config.qdrant_wait_for_upsert,
+            timeout=int(self._config.qdrant_timeout),
+        )
 
     def _ensure_collection(self, *, vector_size: int) -> None:
         """Create the collection if needed."""
@@ -315,6 +363,21 @@ def _iter_batches(
         )
         for start in range(0, len(chunks), batch_size)
     ]
+
+
+def _kb_filter(kb_id: str | None) -> Any:
+    """Return a Qdrant payload filter for one scoped knowledge base."""
+
+    if not kb_id:
+        return None
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="kb_id",
+                match=models.MatchValue(value=kb_id),
+            )
+        ]
+    )
 
 
 def _scored_point_to_chunk(point: Any) -> RagChunk:

@@ -53,9 +53,20 @@ def _trace_to_dict(trace: RunTrace) -> dict[str, object]:
     return {
         "trace_id": trace.trace_id,
         "question": trace.question,
+        "normalized_question": trace.normalized_question,
         "rewritten_query": trace.rewritten_query,
+        "input_check": trace.input_check,
+        "question_type": trace.question_type,
+        "classification_reason": trace.classification_reason,
+        "plan_summary": trace.plan_summary,
+        "plan": trace.plan,
         "retrieved_chunks": [_chunk_to_dict(chunk) for chunk in trace.retrieved_chunks],
         "selected_chunks": [_chunk_to_dict(chunk) for chunk in trace.selected_chunks],
+        "retrieval_rounds": list(trace.retrieval_rounds),
+        "inspection_result": trace.inspection_result,
+        "citation_validation": trace.citation_validation,
+        "evidence_score": trace.evidence_score,
+        "failure_mode": trace.failure_mode,
         "rendered_prompt": trace.rendered_prompt,
         "answer": trace.answer,
         "citations": [_citation_to_dict(citation) for citation in trace.citations],
@@ -72,13 +83,27 @@ def _trace_from_dict(payload: dict[str, object]) -> RunTrace:
 
     raw_retrieved_chunks = payload.get("retrieved_chunks", ())
     raw_selected_chunks = payload.get("selected_chunks", ())
+    raw_retrieval_rounds = payload.get("retrieval_rounds", ())
     raw_citations = payload.get("citations", ())
     raw_reason = payload.get("reason")
+    raw_input_check = payload.get("input_check")
+    raw_plan = payload.get("plan")
+    raw_inspection_result = payload.get("inspection_result")
+    raw_citation_validation = payload.get("citation_validation")
+    raw_failure_mode = payload.get("failure_mode")
 
     return RunTrace(
         trace_id=str(payload["trace_id"]),
         question=str(payload["question"]),
+        normalized_question=str(payload.get("normalized_question", "")),
         rewritten_query=str(payload.get("rewritten_query", "")),
+        input_check=dict(raw_input_check)
+        if isinstance(raw_input_check, dict)
+        else None,
+        question_type=str(payload.get("question_type", "")),
+        classification_reason=str(payload.get("classification_reason", "")),
+        plan_summary=str(payload.get("plan_summary", "")),
+        plan=dict(raw_plan) if isinstance(raw_plan, dict) else None,
         retrieved_chunks=tuple(
             _chunk_from_dict(item)
             for item in raw_retrieved_chunks
@@ -93,6 +118,23 @@ def _trace_from_dict(payload: dict[str, object]) -> RunTrace:
         )
         if isinstance(raw_selected_chunks, list)
         else (),
+        retrieval_rounds=tuple(
+            item for item in raw_retrieval_rounds if isinstance(item, dict)
+        )
+        if isinstance(raw_retrieval_rounds, list)
+        else (),
+        inspection_result=(
+            dict(raw_inspection_result)
+            if isinstance(raw_inspection_result, dict)
+            else None
+        ),
+        citation_validation=(
+            dict(raw_citation_validation)
+            if isinstance(raw_citation_validation, dict)
+            else None
+        ),
+        evidence_score=_as_float(payload.get("evidence_score", 0.0)),
+        failure_mode=(raw_failure_mode if isinstance(raw_failure_mode, str) else None),
         rendered_prompt=str(payload.get("rendered_prompt", "")),
         answer=str(payload.get("answer", "")),
         citations=tuple(

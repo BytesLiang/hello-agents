@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from hello_agents.apps.knowledge_qa.config import KnowledgeQAConfig
-from hello_agents.apps.knowledge_qa.ingest import SupportsIndexFolder
+from hello_agents.apps.knowledge_qa.ingest import SupportsDocumentIndex
 from hello_agents.apps.knowledge_qa.retrieve import SupportsRagQuery
 from hello_agents.apps.knowledge_qa.service import KnowledgeQAService, SupportsChat
 from hello_agents.apps.knowledge_qa.store import JsonKnowledgeBaseStore
@@ -42,7 +42,7 @@ class KnowledgeQARuntime:
         knowledge_base_store: JsonKnowledgeBaseStore | None = None,
         trace_store: JsonlRunTraceStore | None = None,
         llm: SupportsChat | None = None,
-        rag_indexer: SupportsIndexFolder | None = None,
+        rag_indexer: SupportsDocumentIndex | None = None,
         rag_retriever: SupportsRagQuery | None = None,
     ) -> None:
         """Store shared runtime dependencies and optional test overrides."""

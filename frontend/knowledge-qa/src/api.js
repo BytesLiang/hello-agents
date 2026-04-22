@@ -48,6 +48,13 @@ export function createKnowledgeBase(payload) {
   });
 }
 
+export function addKnowledgeBaseDocuments(kbId, payload) {
+  return requestJson(`/api/knowledge-bases/${kbId}/documents`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function uploadKnowledgeBase({ name, description, files }) {
   const formData = new FormData();
   formData.append("name", name);
@@ -76,6 +83,40 @@ export async function uploadKnowledgeBase({ name, description, files }) {
   }
 
   return payload;
+}
+
+export async function uploadKnowledgeBaseDocuments(kbId, { files }) {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
+  }
+
+  const response = await fetch(
+    `${resolveApiBaseUrl()}/api/knowledge-bases/${kbId}/documents/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const payload = contentType.includes("application/json")
+    ? await response.json()
+    : await response.text();
+
+  if (!response.ok) {
+    throw new Error(
+      buildErrorMessage(payload, `Request failed with status ${response.status}.`)
+    );
+  }
+
+  return payload;
+}
+
+export function deleteKnowledgeBaseDocument(kbId, documentId) {
+  return requestJson(`/api/knowledge-bases/${kbId}/documents/${documentId}`, {
+    method: "DELETE",
+  });
 }
 
 export function askKnowledgeBase(kbId, question) {

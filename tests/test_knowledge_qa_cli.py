@@ -54,10 +54,16 @@ class StubRagRetriever:
 
         self._chunks = chunks
 
-    def query(self, text: str, *, top_k: int | None = None) -> list[RagChunk]:
+    def query(
+        self,
+        text: str,
+        *,
+        top_k: int | None = None,
+        kb_id: str | None = None,
+    ) -> list[RagChunk]:
         """Return the configured retrieval hits."""
 
-        del text
+        del text, kb_id
         if top_k is None:
             return list(self._chunks)
         return list(self._chunks[:top_k])
@@ -66,11 +72,16 @@ class StubRagRetriever:
 class StubRagIndexer:
     """Return deterministic indexing counts for CLI tests."""
 
-    def index_folder(self, path: Path, *, glob: str = "**/*") -> int:
+    def index_file(self, path: Path, *, kb_id: str, document_id: str) -> int:
         """Return a fixed chunk count for indexed inputs."""
 
-        del glob
+        del kb_id, document_id
         return 3 if path.is_file() else 5
+
+    def delete_document(self, *, kb_id: str, document_id: str) -> None:
+        """Accept document deletion requests during tests."""
+
+        del kb_id, document_id
 
 
 def build_runtime(
